@@ -29,7 +29,8 @@ const MainContent = () => {
     handleInstallation, 
     isInstalling,
     customInstallPath,
-    setCustomInstallPath
+    setCustomInstallPath,
+    setNotification
   } = useAppContext();
 
   const selectedApp = selectedSoftware.length > 0 ? selectedSoftware[0] : null;
@@ -172,14 +173,12 @@ const MainContent = () => {
                 {/* Show installation paths preview */}
                 <Box sx={{ mb: 3 }}>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Installation Paths:
+                    Installation Path:
                   </Typography>
                   <Paper sx={{ p: 2, backgroundColor: 'grey.50' }}>
-                    {selectedSoftware.map((software, index) => (
-                      <Typography key={index} variant="body2" sx={{ fontSize: '0.8rem', mb: 0.5 }}>
-                        <strong>{software.name}:</strong> {customInstallPath}\\{software.name.replace(/[^a-zA-Z0-9]/g, '')}
-                      </Typography>
-                    ))}
+                    <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                      <strong>All software will be installed to:</strong> {customInstallPath}
+                    </Typography>
                   </Paper>
                 </Box>
 

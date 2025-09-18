@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
-import { CssBaseline, Box } from '@mui/material';
+import { CssBaseline, Box, Snackbar, Alert } from '@mui/material';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
@@ -58,6 +58,7 @@ function App() {
   const [isInstalling, setIsInstalling] = useState(false);
   const [installationProgress, setInstallationProgress] = useState(null);
   const [customInstallPath, setCustomInstallPath] = useState('C:\\apps');
+  const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
 
   useEffect(() => {
     loadInitialData();
@@ -77,7 +78,12 @@ function App() {
         setLogs(logsData);
       }
     } catch (error) {
-      console.error('Failed to load initial data:', error);
+      // console.error('Failed to load initial data:', error);
+      setNotification({
+        open: true,
+        message: 'Failed to load application data. Please restart the application.',
+        severity: 'error'
+      });
     }
   };
 
@@ -107,23 +113,71 @@ function App() {
       const result = await window.electronAPI.installSoftware({
         software: selectedSoftware.map(sw => ({
           ...sw,
-          installPath: customInstallPath + '\\' + sw.name.replace(/[^a-zA-Z0-9]/g, '')
+          installPath: customInstallPath
         })),
         profileId: null
       });
 
       if (result.success) {
+        // Check individual installation results
+        const failedInstalls = result.results.filter(r => !r.success);
+        const successfulInstalls = result.results.filter(r => r.success);
+        
+        if (failedInstalls.length === 0) {
+          // All installations successful
+          setNotification({
+            open: true,
+            message: `Successfully installed ${successfulInstalls.length} software package${successfulInstalls.length > 1 ? 's' : ''}!`,
+            severity: 'success'
+          });
+        } else if (successfulInstalls.length === 0) {
+          // All installations failed
+          const errorMessages = failedInstalls.map(f => `${f.name}: ${f.error || `Exit code ${f.exitCode}`}`).join(', ');
+          setNotification({
+            open: true,
+            message: `Installation failed for all software. Errors: ${errorMessages}`,
+            severity: 'error'
+          });
+        } else {
+          // Mixed results
+          const errorMessages = failedInstalls.map(f => `${f.name}: ${f.error || `Exit code ${f.exitCode}`}`).join(', ');
+          setNotification({
+            open: true,
+            message: `${successfulInstalls.length} installed successfully, ${failedInstalls.length} failed. Errors: ${errorMessages}`,
+            severity: 'warning'
+          });
+        }
+
         // Refresh logs after installation
         const updatedLogs = await window.electronAPI.getLogs();
         setLogs(updatedLogs);
         setSelectedSoftware([]);
+      } else {
+        // Overall installation process failed
+        setNotification({
+          open: true,
+          message: `Installation process failed: ${result.error}`,
+          severity: 'error'
+        });
       }
     } catch (error) {
-      console.error('Installation failed:', error);
+      // console.error('Installation failed:', error);
+      setNotification({
+        open: true,
+        message: `Installation failed: ${error.message}`,
+        severity: 'error'
+      });
     } finally {
       setIsInstalling(false);
       setInstallationProgress(null);
     }
+  };
+
+  const handleNotificationClose = (event, reason) => {
+    if (reason === 'clickaway') {
+      return;
+    }
+    setNotification({ ...notification, open: false });
   };
 
   const appContextValue = {
@@ -135,6 +189,8 @@ function App() {
     installationProgress,
     customInstallPath,
     setCustomInstallPath,
+    notification,
+    setNotification,
     handleSoftwareSelection,
     handleInstallation,
     loadInitialData,
@@ -154,6 +210,23 @@ function App() {
           </Box>
           <LogsPanel />
         </Box>
+        
+        {/* Notification Snackbar */}
+        <Snackbar
+          open={notification.open}
+          autoHideDuration={6000}
+          onClose={handleNotificationClose}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        >
+          <Alert 
+            onClose={handleNotificationClose} 
+            severity={notification.severity} 
+            sx={{ width: '100%' }}
+            variant="filled"
+          >
+            {notification.message}
+          </Alert>
+        </Snackbar>
       </AppProvider>
     </ThemeProvider>
   );

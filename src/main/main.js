@@ -38,26 +38,26 @@ class SetupFlowApp {
         fs.ensureDir(this.appPaths.installers)
       ]);
     } catch (error) {
-      console.error('Failed to create directories:', error);
+      // console.error('Failed to create directories:', error);
+      // Log to file instead of console
+      await this.logToFile(path.join(process.cwd(), 'error.log'), `Failed to create directories: ${error.message}`);
+      throw error;
     }
   }
 
   createWindow() {
     this.mainWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
-      minWidth: 800,
-      minHeight: 600,
+      width: 1400,
+      height: 900,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         enableRemoteModule: false,
         preload: path.join(__dirname, 'preload.js'),
-        sandbox: false
+        devTools: false  // Add this line to disable developer tools
       },
-      icon: path.join(__dirname, '../../assets/icon.png'),
-      show: false,
-      titleBarStyle: 'default'
+      icon: path.join(__dirname, '../assets/icon.png'),
+      show: false
     });
 
     // Load the app
@@ -89,7 +89,7 @@ class SetupFlowApp {
           file.endsWith('.msi') || file.endsWith('.exe') || file.endsWith('.pkg')
         );
       } catch (error) {
-        console.error('Error reading installers directory:', error);
+        // console.error('Error reading installers directory:', error);
         return [];
       }
     });
@@ -110,7 +110,7 @@ class SetupFlowApp {
         
         return profiles;
       } catch (error) {
-        console.error('Error reading profiles:', error);
+        // console.error('Error reading profiles:', error);
         return [];
       }
     });
@@ -131,7 +131,7 @@ class SetupFlowApp {
         await fs.writeJson(profilePath, profile, { spaces: 2 });
         return { success: true, profile };
       } catch (error) {
-        console.error('Error saving profile:', error);
+        // console.error('Error saving profile:', error);
         return { success: false, error: error.message };
       }
     });
@@ -152,7 +152,7 @@ class SetupFlowApp {
         
         return { success: true, results, logPath };
       } catch (error) {
-        console.error('Installation error:', error);
+        // console.error('Installation error:', error);
         return { success: false, error: error.message };
       }
     });
@@ -178,7 +178,7 @@ class SetupFlowApp {
         
         return logs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       } catch (error) {
-        console.error('Error reading logs:', error);
+        // console.error('Error reading logs:', error);
         return [];
       }
     });
@@ -190,7 +190,7 @@ class SetupFlowApp {
         const content = await fs.readFile(logPath, 'utf8');
         return { success: true, content };
       } catch (error) {
-        console.error('Error reading log:', error);
+        // console.error('Error reading log:', error);
         return { success: false, error: error.message };
       }
     });
@@ -275,7 +275,8 @@ class SetupFlowApp {
       const logEntry = `[${timestamp}] ${message}\n`;
       await fs.appendFile(logPath, logEntry);
     } catch (error) {
-      console.error('Failed to write to log file:', error);
+      // console.error('Failed to write to log file:', error);
+      // Silent fail for logging errors to avoid infinite loops
     }
   }
 
