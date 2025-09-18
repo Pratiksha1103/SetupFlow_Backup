@@ -10,13 +10,11 @@ import {
   ListItemText,
   Checkbox,
   Divider,
-  Button,
-  Fab
+  Button
 } from '@mui/material';
 import {
   Apps as AppsIcon,
-  GetApp as DownloadIcon,
-  CloudQueue as CloudIcon
+  GetApp as DownloadIcon
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 
@@ -33,31 +31,39 @@ const Sidebar = () => {
   const softwareDatabase = {
     'notepad++': {
       name: 'Notepad++',
-      version: '8.5.7',
+      version: '8.8.5',
       description: 'Advanced text editor',
-      installerPath: 'npp.8.5.7.Installer.x64.exe',
-      command: 'start /wait "" "{path}" /S'
+      installerPath: 'npp.8.8.5.Installer.x64.exe',
+      command: '"{path}" /S /NCRC /D={installPath}',
+      defaultInstallPath: 'C:\\apps\\Notepad++',
+      supportsCustomPath: true
     },
     'eclipse': {
       name: 'Eclipse IDE',
       version: '2023-09',
       description: 'Integrated Development Environment',
       installerPath: 'eclipse-inst-jre-win64.exe',
-      command: 'start /wait "" "{path}" -silent'
+      command: '"{path}" -silent -nosplash -data "{installPath}\\workspace"',
+      defaultInstallPath: 'C:\\apps\\Eclipse',
+      supportsCustomPath: true
     },
     '7zip': {
       name: '7-Zip',
       version: '23.01',
       description: 'File archiver with high compression ratio',
       installerPath: '7z2301-x64.msi',
-      command: 'msiexec /i "{path}" /quiet /norestart'
+      command: 'msiexec /i "{path}" /quiet /norestart /qn INSTALLDIR="{installPath}"',
+      defaultInstallPath: 'C:\\apps\\7-Zip',
+      supportsCustomPath: true
     },
     'git': {
       name: 'Git',
       version: '2.42.0',
       description: 'Distributed version control system',
       installerPath: 'Git-2.42.0.2-64-bit.exe',
-      command: 'start /wait "" "{path}" /VERYSILENT /NORESTART'
+      command: '"{path}" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /DIR="{installPath}"',
+      defaultInstallPath: 'C:\\apps\\Git',
+      supportsCustomPath: true
     },
     'jdk': {
       name: 'Java Development Kit',
@@ -79,17 +85,14 @@ const Sidebar = () => {
       version: 'Unknown',
       description: 'Software installer',
       installerPath: filename,
-      command: `start /wait "" "{path}"`
+      command: `"{path}" /S`,
+      defaultInstallPath: `C:\\apps\\${filename.replace(/\.[^/.]+$/, "")}`,
+      supportsCustomPath: true
     };
   };
 
   const isSelected = (software) => {
     return selectedSoftware.some(item => item.name === software.name);
-  };
-
-  const handleCreateServer = () => {
-    // Future implementation for server creation (Terraform)
-    console.log('Create Server clicked - Future Terraform feature');
   };
 
   return (
@@ -170,33 +173,7 @@ const Sidebar = () => {
         </Button>
       </Card>
 
-      {/* Create Server Button - Future Terraform Integration */}
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-        <Fab
-          color="warning"
-          aria-label="create server"
-          onClick={handleCreateServer}
-          sx={{
-            backgroundColor: '#ff9800',
-            '&:hover': {
-              backgroundColor: '#f57c00'
-            }
-          }}
-        >
-          <CloudIcon />
-        </Fab>
-        <Typography
-          variant="caption"
-          sx={{
-            position: 'absolute',
-            mt: 8,
-            textAlign: 'center',
-            color: 'text.secondary'
-          }}
-        >
-          Create Server
-        </Typography>
-      </Box>
+
     </Box>
   );
 };
