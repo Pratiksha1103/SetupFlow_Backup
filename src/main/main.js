@@ -452,6 +452,8 @@ class SetupFlowApp {
               await this.setupGradleEnvironment(defaultInstallPath, logPath);
             } else if (name.toLowerCase().includes('tomcat')) {
               await this.setupTomcatEnvironment(defaultInstallPath, logPath);
+            } else if (name.toLowerCase().includes('apache') && name.toLowerCase().includes('http')) {
+              await this.setupApacheHttpdEnvironment(defaultInstallPath, logPath);
             }
             
             this.logToFile(logPath, `=== EXTRACTION SUCCESS ===`);
@@ -608,6 +610,106 @@ class SetupFlowApp {
       }
     } catch (error) {
       this.logToFile(logPath, `Warning: Failed to setup Tomcat environment: ${error.message}`);
+    }
+  }
+
+  async setupApacheHttpdEnvironment(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Setting up Apache HTTP Server environment...`);
+      
+      // Apache httpd can have different directory structures, let's check common patterns
+      const extractedItems = await fs.readdir(installPath);
+      this.logToFile(logPath, `Available extracted items: ${extractedItems.join(', ')}`);
+      
+      // Look for common Apache httpd directory patterns
+      let httpdDir = extractedItems.find(item => 
+        item.toLowerCase().includes('apache') || 
+        item.toLowerCase().includes('httpd') ||
+        item.toLowerCase().includes('http')
+      );
+      
+      // If no specific directory found, use the first directory or the install path itself
+      if (!httpdDir && extractedItems.length > 0) {
+        const directories = [];
+        for (const item of extractedItems) {
+          const itemPath = path.join(installPath, item);
+          const stats = await fs.stat(itemPath);
+          if (stats.isDirectory()) {
+            directories.push(item);
+          }
+        }
+        httpdDir = directories[0]; // Use first directory found
+      }
+      
+      const httpdPath = httpdDir ? path.join(installPath, httpdDir) : installPath;
+      const httpdBinPath = path.join(httpdPath, 'bin');
+      const httpdConfPath = path.join(httpdPath, 'conf');
+      const httpdHtdocsPath = path.join(httpdPath, 'htdocs');
+      const httpdLogsPath = path.join(httpdPath, 'logs');
+      const httpdModulesPath = path.join(httpdPath, 'modules');
+      
+      this.logToFile(logPath, `Apache HTTP Server installation directory: ${httpdPath}`);
+      this.logToFile(logPath, `Apache bin directory: ${httpdBinPath}`);
+      this.logToFile(logPath, `Apache configuration directory: ${httpdConfPath}`);
+      this.logToFile(logPath, `Apache document root: ${httpdHtdocsPath}`);
+      this.logToFile(logPath, `Apache logs directory: ${httpdLogsPath}`);
+      this.logToFile(logPath, `Apache modules directory: ${httpdModulesPath}`);
+      
+      // Check if important files and directories exist
+      const httpdExe = path.join(httpdBinPath, 'httpd.exe');
+      const httpdConf = path.join(httpdConfPath, 'httpd.conf');
+      const indexHtml = path.join(httpdHtdocsPath, 'index.html');
+      
+      let validInstallation = true;
+      
+      if (await fs.pathExists(httpdExe)) {
+        this.logToFile(logPath, `✓ Apache executable found: ${httpdExe}`);
+      } else {
+        this.logToFile(logPath, `⚠ Warning: Apache executable not found at ${httpdExe}`);
+        validInstallation = false;
+      }
+      
+      if (await fs.pathExists(httpdConf)) {
+        this.logToFile(logPath, `✓ Apache configuration found: ${httpdConf}`);
+      } else {
+        this.logToFile(logPath, `⚠ Warning: Apache configuration not found at ${httpdConf}`);
+        validInstallation = false;
+      }
+      
+      if (await fs.pathExists(httpdHtdocsPath)) {
+        this.logToFile(logPath, `✓ Document root directory found: ${httpdHtdocsPath}`);
+      } else {
+        this.logToFile(logPath, `⚠ Warning: Document root not found at ${httpdHtdocsPath}`);
+      }
+      
+      if (await fs.pathExists(httpdModulesPath)) {
+        this.logToFile(logPath, `✓ Modules directory found: ${httpdModulesPath}`);
+      } else {
+        this.logToFile(logPath, `⚠ Warning: Modules directory not found at ${httpdModulesPath}`);
+      }
+      
+      // Provide usage instructions
+      if (validInstallation) {
+        this.logToFile(logPath, `Apache HTTP Server installation completed successfully!`);
+        this.logToFile(logPath, `To start Apache: ${httpdExe}`);
+        this.logToFile(logPath, `To test configuration: ${httpdExe} -t`);
+        this.logToFile(logPath, `Configuration file: ${httpdConf}`);
+        this.logToFile(logPath, `Default document root: ${httpdHtdocsPath}`);
+        this.logToFile(logPath, `Access website at: http://localhost (default port 80)`);
+        this.logToFile(logPath, `Log files location: ${httpdLogsPath}`);
+        this.logToFile(logPath, `To stop Apache: Use Ctrl+C in the command window or Task Manager`);
+        
+        // Additional service installation instructions
+        this.logToFile(logPath, `To install as Windows service: ${httpdExe} -k install`);
+        this.logToFile(logPath, `To start service: ${httpdExe} -k start`);
+        this.logToFile(logPath, `To stop service: ${httpdExe} -k stop`);
+        this.logToFile(logPath, `To uninstall service: ${httpdExe} -k uninstall`);
+      } else {
+        this.logToFile(logPath, `⚠ Apache installation may be incomplete - some components missing`);
+      }
+      
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to setup Apache HTTP Server environment: ${error.message}`);
     }
   }
 
