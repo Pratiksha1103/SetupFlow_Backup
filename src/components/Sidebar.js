@@ -71,6 +71,17 @@ const Sidebar = () => {
       description: 'Oracle JDK 21 for Java development',
       installerPath: 'jdk-21_windows-x64_bin.exe',
       command: 'start /wait "" "{path}" /s INSTALL_SILENT=Enable STATIC=Disable AUTO_UPDATE=Disable WEB_JAVA=Disable'
+    },
+    'gradle': {
+      name: 'Gradle Build Tool',
+      version: '9.0.0',
+      description: 'Gradle Build Automation Tool',
+      installerPath: 'gradle-9.0.0-bin.zip',
+      command: 'EXTRACT_ZIP',
+      defaultInstallPath: 'C:\\apps\\gradle',
+      supportsCustomPath: true,
+      requiresExtraction: true,
+      type: 'zip'
     }
   };
 

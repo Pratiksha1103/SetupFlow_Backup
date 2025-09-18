@@ -225,7 +225,14 @@ class SetupFlowApp {
       this.logToFile(logPath, `Installer size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
 
       // Handle ZIP files that require extraction
-      if (requiresExtraction || installerPath.toLowerCase().endsWith('.zip')) {
+      if (command === 'EXTRACT_ZIP' || (requiresExtraction && installerPath.toLowerCase().endsWith('.zip'))) {
+        this.logToFile(logPath, `INFO: ${name} is a ZIP file that will be extracted automatically.`);
+        this.handleZipExtraction(appData, logPath, fullInstallerPath, resolve);
+        return;
+      }
+      
+      // Handle other ZIP files that require manual extraction
+      if (installerPath.toLowerCase().endsWith('.zip')) {
         this.logToFile(logPath, `INFO: ${name} is a ZIP file that requires manual extraction.`);
         this.logToFile(logPath, `INFO: Please extract ${installerPath} manually and run the contained installer.`);
         this.logToFile(logPath, `INFO: Location: ${fullInstallerPath}`);
@@ -361,6 +368,190 @@ class SetupFlowApp {
     } catch (error) {
       // console.error('Failed to write to log file:', error);
       // Silent fail for logging errors to avoid infinite loops
+    }
+  }
+
+  async handleZipExtraction(appData, logPath, fullInstallerPath, resolve) {
+    const { name, defaultInstallPath } = appData;
+    const startTime = new Date();
+    
+    try {
+      this.logToFile(logPath, `Starting ZIP extraction of ${name} at ${startTime.toISOString()}`);
+      this.logToFile(logPath, `Source: ${fullInstallerPath}`);
+      this.logToFile(logPath, `Target: ${defaultInstallPath}`);
+      
+      // Send real-time progress update to UI
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('installation-progress', {
+          name,
+          status: 'starting',
+          message: 'Preparing extraction...'
+        });
+      }
+
+      // Ensure target directory exists
+      await fs.ensureDir(defaultInstallPath);
+      this.logToFile(logPath, `Created target directory: ${defaultInstallPath}`);
+
+      // Extract ZIP using PowerShell (built into Windows)
+      const extractCommand = `powershell -Command "Expand-Archive -Path '${fullInstallerPath}' -DestinationPath '${defaultInstallPath}' -Force"`;
+      this.logToFile(logPath, `Extraction command: ${extractCommand}`);
+      
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('installation-progress', {
+          name,
+          status: 'installing',
+          message: 'Extracting files...',
+          progress: 30
+        });
+      }
+
+      const child = spawn('powershell', [
+        '-Command', 
+        `Expand-Archive -Path '${fullInstallerPath}' -DestinationPath '${defaultInstallPath}' -Force`
+      ], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (data) => {
+        const output = data.toString().trim();
+        if (output) {
+          stdout += output;
+          this.logToFile(logPath, `EXTRACT STDOUT: ${output}`);
+          console.log(`[${name}] EXTRACT:`, output);
+        }
+      });
+
+      child.stderr.on('data', (data) => {
+        const output = data.toString().trim();
+        if (output) {
+          stderr += output;
+          this.logToFile(logPath, `EXTRACT STDERR: ${output}`);
+          console.warn(`[${name}] EXTRACT ERROR:`, output);
+        }
+      });
+
+      child.on('close', async (code) => {
+        const endTime = new Date();
+        const duration = endTime - startTime;
+        
+        this.logToFile(logPath, `ZIP extraction completed with exit code ${code} in ${duration}ms`);
+        
+        if (code === 0) {
+          // Check if extraction was successful by looking for extracted content
+          try {
+            const extractedFiles = await fs.readdir(defaultInstallPath);
+            this.logToFile(logPath, `Extracted ${extractedFiles.length} items to ${defaultInstallPath}`);
+            this.logToFile(logPath, `Contents: ${extractedFiles.join(', ')}`);
+            
+            // For Gradle, we need to set up the environment
+            if (name.toLowerCase().includes('gradle')) {
+              await this.setupGradleEnvironment(defaultInstallPath, logPath);
+            }
+            
+            this.logToFile(logPath, `=== EXTRACTION SUCCESS ===`);
+            console.log(`[${name}] Extraction SUCCESS`);
+            
+            if (this.mainWindow) {
+              this.mainWindow.webContents.send('installation-progress', {
+                name,
+                status: 'completed',
+                message: 'Installation completed successfully!',
+                progress: 100
+              });
+            }
+            
+            resolve({
+              name,
+              success: true,
+              message: `Successfully extracted to ${defaultInstallPath}`,
+              installPath: defaultInstallPath,
+              duration
+            });
+          } catch (dirError) {
+            this.logToFile(logPath, `ERROR: Failed to verify extraction: ${dirError.message}`);
+            resolve({
+              name,
+              success: false,
+              error: `Extraction verification failed: ${dirError.message}`
+            });
+          }
+        } else {
+          this.logToFile(logPath, `=== EXTRACTION FAILED ===`);
+          console.error(`[${name}] Extraction FAILED (exit code: ${code})`);
+          
+          if (this.mainWindow) {
+            this.mainWindow.webContents.send('installation-progress', {
+              name,
+              status: 'failed',
+              message: `Extraction failed (exit code: ${code})`,
+              progress: 0
+            });
+          }
+          
+          resolve({
+            name,
+            success: false,
+            error: `Extraction failed with exit code ${code}`,
+            stderr,
+            duration
+          });
+        }
+      });
+
+      child.on('error', (error) => {
+        this.logToFile(logPath, `EXTRACTION ERROR: ${error.message}`);
+        this.logToFile(logPath, `=== EXTRACTION ERROR ===`);
+        console.error(`[${name}] Extraction error:`, error.message);
+        
+        if (this.mainWindow) {
+          this.mainWindow.webContents.send('installation-progress', {
+            name,
+            status: 'error',
+            message: `Error: ${error.message}`,
+            progress: 0
+          });
+        }
+        
+        resolve({
+          name,
+          success: false,
+          error: error.message
+        });
+      });
+
+    } catch (error) {
+      this.logToFile(logPath, `SETUP ERROR: ${error.message}`);
+      console.error(`[${name}] Setup error:`, error.message);
+      resolve({
+        name,
+        success: false,
+        error: error.message
+      });
+    }
+  }
+
+  async setupGradleEnvironment(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Setting up Gradle environment...`);
+      
+      // Find the actual Gradle directory (it's usually gradle-x.x.x inside the extract)
+      const extractedItems = await fs.readdir(installPath);
+      const gradleDir = extractedItems.find(item => item.startsWith('gradle-'));
+      
+      if (gradleDir) {
+        const gradleBinPath = path.join(installPath, gradleDir, 'bin');
+        this.logToFile(logPath, `Gradle bin directory: ${gradleBinPath}`);
+        this.logToFile(logPath, `To use Gradle, add to PATH: ${gradleBinPath}`);
+        this.logToFile(logPath, `Or use directly: ${path.join(gradleBinPath, 'gradle.bat')}`);
+      } else {
+        this.logToFile(logPath, `Warning: Could not find gradle directory in extracted files`);
+      }
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to setup Gradle environment: ${error.message}`);
     }
   }
 
