@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -18,7 +18,8 @@ import {
   ExpandMore,
   CheckCircle as SuccessIcon,
   Error as ErrorIcon,
-  Description as LogIcon
+  Description as LogIcon,
+  DragIndicator as DragIcon
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 
@@ -27,9 +28,48 @@ const LogsPanel = () => {
   const [expanded, setExpanded] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
   const [logContent, setLogContent] = useState('');
+  const [panelHeight, setPanelHeight] = useState(80); // Increased default height
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef(null);
+  const startY = useRef(0);
+  const startHeight = useRef(0);
+
+  // Mouse drag handlers
+  const handleMouseDown = (e) => {
+    setIsDragging(true);
+    startY.current = e.clientY;
+    startHeight.current = panelHeight;
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    e.preventDefault();
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging) return;
+    const deltaY = startY.current - e.clientY; // Inverted for upward drag
+    const newHeight = Math.max(60, Math.min(400, startHeight.current + deltaY));
+    setPanelHeight(newHeight);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+  };
+
+  // Cleanup event listeners
+  useEffect(() => {
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   const handleExpandClick = () => {
     setExpanded(!expanded);
+    if (!expanded) {
+      setPanelHeight(Math.max(panelHeight, 200)); // Ensure good height when expanding
+    }
   };
 
   const handleLogClick = async (log) => {
@@ -65,16 +105,55 @@ const LogsPanel = () => {
 
   return (
     <Box sx={{ 
-      height: expanded ? 200 : 50, // Reduced height to fit better in bottom area
-      transition: 'height 0.3s ease',
-      flexShrink: 0 // Prevent shrinking
+      height: panelHeight, // Use dynamic height
+      transition: isDragging ? 'none' : 'height 0.3s ease',
+      flexShrink: 0, // Prevent shrinking
+      position: 'relative'
     }}>
+      {/* Drag Handle */}
+      <Box
+        ref={dragRef}
+        onMouseDown={handleMouseDown}
+        sx={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '8px',
+          cursor: 'ns-resize',
+          backgroundColor: isDragging ? 'primary.main' : 'transparent',
+          borderTop: '2px solid #e0e0e0',
+          borderBottom: '1px solid #e0e0e0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10,
+          '&:hover': {
+            backgroundColor: 'primary.light',
+            borderTop: '2px solid #1976d2',
+          },
+          transition: 'all 0.2s ease'
+        }}
+      >
+        <DragIcon 
+          sx={{ 
+            fontSize: 16, 
+            color: isDragging ? 'white' : 'text.secondary',
+            transform: 'rotate(90deg)',
+            opacity: 0.7
+          }} 
+        />
+      </Box>
+
       <Card sx={{ 
         mx: 2, 
-        mb: 1, // Reduced margin
+        mb: 1,
         height: '100%', 
         display: 'flex', 
-        flexDirection: 'column' 
+        flexDirection: 'column',
+        mt: 1, // Add margin top for drag handle
+        boxShadow: 3, // More prominent shadow
+        border: '1px solid #e0e0e0' // Add border for visibility
       }}>
         <Box 
           sx={{ 
@@ -82,11 +161,13 @@ const LogsPanel = () => {
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'space-between',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            backgroundColor: 'grey.50', // Light background to make it more visible
+            borderBottom: '1px solid #e0e0e0'
           }}
           onClick={handleExpandClick}
         >
-          <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1, fontWeight: 600 }}>
             <LogIcon color="primary" />
             Success / Failure Logs
             {logs.length > 0 && (
@@ -94,13 +175,16 @@ const LogsPanel = () => {
                 label={logs.length} 
                 size="small" 
                 color="primary" 
-                variant="outlined" 
+                sx={{ ml: 1 }}
               />
             )}
           </Typography>
-          <IconButton>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              {expanded ? 'Click to collapse' : 'Click to expand • Drag top edge to resize'}
+            </Typography>
             {expanded ? <ExpandLess /> : <ExpandMore />}
-          </IconButton>
+          </Box>
         </Box>
 
         <Collapse in={expanded} timeout="auto" unmountOnExit>

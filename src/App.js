@@ -68,7 +68,7 @@ function App() {
       description: 'Advanced text editor',
       installerPath: 'npp.8.8.5.Installer.x64.exe',
       command: '"{path}" /S /NCRC /D={installPath}',
-      defaultInstallPath: 'C:\\apps',
+      defaultInstallPath: 'C:\\apps\\Notepad++',
       supportsCustomPath: true
     },
     'eclipse': {
@@ -205,12 +205,23 @@ function App() {
           });
         } else if (successfulInstalls.length === 0) {
           // All installations failed
-          const errorMessages = failedInstalls.map(f => `${f.name}: ${f.error || `Exit code ${f.exitCode}`}`).join(', ');
-          setNotification({
-            open: true,
-            message: `Installation failed for all software. Errors: ${errorMessages}`,
-            severity: 'error'
-          });
+          const adminErrors = failedInstalls.filter(f => f.error && f.error.includes('Administrator privileges required'));
+          const otherErrors = failedInstalls.filter(f => !f.error || !f.error.includes('Administrator privileges required'));
+          
+          if (adminErrors.length > 0) {
+            setNotification({
+              open: true,
+              message: `Installation failed: Administrator privileges required. Please restart the application using admin-start.cmd or debug-admin.bat`,
+              severity: 'error'
+            });
+          } else {
+            const errorMessages = failedInstalls.map(f => `${f.name}: ${f.error || `Exit code ${f.exitCode}`}`).join(', ');
+            setNotification({
+              open: true,
+              message: `Installation failed for all software. Errors: ${errorMessages}`,
+              severity: 'error'
+            });
+          }
         } else {
           // Mixed results
           const errorMessages = failedInstalls.map(f => `${f.name}: ${f.error || `Exit code ${f.exitCode}`}`).join(', ');

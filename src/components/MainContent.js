@@ -157,25 +157,25 @@ const MainContent = () => {
                           padding: '8px 4px',
                           // Custom grey scrollbar styles for additional software list
                           '&::-webkit-scrollbar': {
-                            width: '12px', // Make scrollbar visible
+                            width: '8px', // Make scrollbar thinner like in the image
                           },
                           '&::-webkit-scrollbar-track': {
                             backgroundColor: '#f8f9fa',
-                            borderRadius: '6px',
+                            borderRadius: '4px',
                             border: '1px solid #dee2e6',
                           },
                           '&::-webkit-scrollbar-thumb': {
                             backgroundColor: '#6c757d', // Grey color
-                            borderRadius: '6px',
-                            border: '2px solid #f8f9fa',
-                            boxShadow: 'inset 0 0 4px rgba(0,0,0,0.1)',
+                            borderRadius: '4px',
+                            border: '1px solid #f8f9fa',
+                            boxShadow: 'inset 0 0 2px rgba(0,0,0,0.1)',
                             '&:hover': {
                               backgroundColor: '#5a6268', // Darker grey on hover
-                              boxShadow: 'inset 0 0 6px rgba(0,0,0,0.2)',
+                              boxShadow: 'inset 0 0 4px rgba(0,0,0,0.2)',
                             },
                             '&:active': {
                               backgroundColor: '#495057', // Darkest grey when active
-                              boxShadow: 'inset 0 0 8px rgba(0,0,0,0.3)',
+                              boxShadow: 'inset 0 0 6px rgba(0,0,0,0.3)',
                             },
                           },
                           '&::-webkit-scrollbar-corner': {
