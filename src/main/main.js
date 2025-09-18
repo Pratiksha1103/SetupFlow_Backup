@@ -280,8 +280,8 @@ class SetupFlowApp {
       child.stdout.on('data', (data) => {
         const output = data.toString().trim();
         if (output) {
-          stdout += output;
-          this.logToFile(logPath, `STDOUT: ${output}`);
+        stdout += output;
+        this.logToFile(logPath, `STDOUT: ${output}`);
           console.log(`[${name}] STDOUT:`, output);
           
           // Send progress update
@@ -300,8 +300,8 @@ class SetupFlowApp {
       child.stderr.on('data', (data) => {
         const output = data.toString().trim();
         if (output) {
-          stderr += output;
-          this.logToFile(logPath, `STDERR: ${output}`);
+        stderr += output;
+        this.logToFile(logPath, `STDERR: ${output}`);
           console.warn(`[${name}] STDERR:`, output);
         }
       });
@@ -447,9 +447,11 @@ class SetupFlowApp {
             this.logToFile(logPath, `Extracted ${extractedFiles.length} items to ${defaultInstallPath}`);
             this.logToFile(logPath, `Contents: ${extractedFiles.join(', ')}`);
             
-            // For Gradle, we need to set up the environment
+            // Set up environment for specific applications
             if (name.toLowerCase().includes('gradle')) {
               await this.setupGradleEnvironment(defaultInstallPath, logPath);
+            } else if (name.toLowerCase().includes('tomcat')) {
+              await this.setupTomcatEnvironment(defaultInstallPath, logPath);
             }
             
             this.logToFile(logPath, `=== EXTRACTION SUCCESS ===`);
@@ -552,6 +554,60 @@ class SetupFlowApp {
       }
     } catch (error) {
       this.logToFile(logPath, `Warning: Failed to setup Gradle environment: ${error.message}`);
+    }
+  }
+
+  async setupTomcatEnvironment(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Setting up Apache Tomcat environment...`);
+      
+      // Find the actual Tomcat directory (it's usually apache-tomcat-x.x.x inside the extract)
+      const extractedItems = await fs.readdir(installPath);
+      const tomcatDir = extractedItems.find(item => item.startsWith('apache-tomcat-'));
+      
+      if (tomcatDir) {
+        const tomcatPath = path.join(installPath, tomcatDir);
+        const tomcatBinPath = path.join(tomcatPath, 'bin');
+        const tomcatWebappsPath = path.join(tomcatPath, 'webapps');
+        const tomcatConfPath = path.join(tomcatPath, 'conf');
+        
+        this.logToFile(logPath, `Tomcat installation directory: ${tomcatPath}`);
+        this.logToFile(logPath, `Tomcat bin directory: ${tomcatBinPath}`);
+        this.logToFile(logPath, `Tomcat webapps directory: ${tomcatWebappsPath}`);
+        this.logToFile(logPath, `Tomcat configuration directory: ${tomcatConfPath}`);
+        
+        // Set CATALINA_HOME environment variable info
+        this.logToFile(logPath, `CATALINA_HOME should be set to: ${tomcatPath}`);
+        this.logToFile(logPath, `To start Tomcat: ${path.join(tomcatBinPath, 'startup.bat')}`);
+        this.logToFile(logPath, `To stop Tomcat: ${path.join(tomcatBinPath, 'shutdown.bat')}`);
+        this.logToFile(logPath, `Access Tomcat Manager at: http://localhost:8080/manager`);
+        this.logToFile(logPath, `Deploy WAR files to: ${tomcatWebappsPath}`);
+        
+        // Check if important files exist
+        const startupScript = path.join(tomcatBinPath, 'startup.bat');
+        const serverXml = path.join(tomcatConfPath, 'server.xml');
+        
+        if (await fs.pathExists(startupScript)) {
+          this.logToFile(logPath, `✓ Startup script found: ${startupScript}`);
+        } else {
+          this.logToFile(logPath, `⚠ Warning: Startup script not found at ${startupScript}`);
+        }
+        
+        if (await fs.pathExists(serverXml)) {
+          this.logToFile(logPath, `✓ Server configuration found: ${serverXml}`);
+        } else {
+          this.logToFile(logPath, `⚠ Warning: Server configuration not found at ${serverXml}`);
+        }
+        
+        this.logToFile(logPath, `Tomcat installation completed successfully!`);
+        this.logToFile(logPath, `Default port: 8080 (configurable in conf/server.xml)`);
+        
+      } else {
+        this.logToFile(logPath, `Warning: Could not find apache-tomcat directory in extracted files`);
+        this.logToFile(logPath, `Available items: ${extractedItems.join(', ')}`);
+      }
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to setup Tomcat environment: ${error.message}`);
     }
   }
 
