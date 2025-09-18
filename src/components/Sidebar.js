@@ -58,6 +58,13 @@ const Sidebar = () => {
       description: 'Distributed version control system',
       installerPath: 'Git-2.42.0.2-64-bit.exe',
       command: 'start /wait "" "{path}" /VERYSILENT /NORESTART'
+    },
+    'jdk': {
+      name: 'Java Development Kit',
+      version: '21',
+      description: 'Oracle JDK 21 for Java development',
+      installerPath: 'jdk-21_windows-x64_bin.exe',
+      command: 'start /wait "" "{path}" /s INSTALL_SILENT=Enable STATIC=Disable AUTO_UPDATE=Disable WEB_JAVA=Disable'
     }
   };
 
