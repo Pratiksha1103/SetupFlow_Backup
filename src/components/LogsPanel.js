@@ -64,8 +64,18 @@ const LogsPanel = () => {
   };
 
   return (
-    <Box sx={{ height: expanded ? 300 : 60, transition: 'height 0.3s ease' }}>
-      <Card sx={{ m: 2, height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ 
+      height: expanded ? 200 : 50, // Reduced height to fit better in bottom area
+      transition: 'height 0.3s ease',
+      flexShrink: 0 // Prevent shrinking
+    }}>
+      <Card sx={{ 
+        mx: 2, 
+        mb: 1, // Reduced margin
+        height: '100%', 
+        display: 'flex', 
+        flexDirection: 'column' 
+      }}>
         <Box 
           sx={{ 
             p: 2, 

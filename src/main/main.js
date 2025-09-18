@@ -18,7 +18,7 @@ app.on('web-contents-created', (event, contents) => {
 class SetupFlowApp {
   constructor() {
     this.mainWindow = null;
-    this.isDev = process.env.NODE_ENV === 'development';
+    this.isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
     this.appPaths = this.initializePaths();
   }
 
@@ -200,8 +200,8 @@ class SetupFlowApp {
   }
 
   async installSingleApp(appData, logPath) {
-    return new Promise((resolve) => {
-      const { name, installerPath, command, requiresExtraction } = appData;
+    return new Promise(async (resolve) => {
+      const { name, installerPath, command, requiresExtraction, defaultInstallPath } = appData;
       const fullInstallerPath = path.join(this.appPaths.installers, installerPath);
       
       // Enhanced logging for debugging
@@ -210,6 +210,7 @@ class SetupFlowApp {
       this.logToFile(logPath, `Installer Path: ${installerPath}`);
       this.logToFile(logPath, `Full Path: ${fullInstallerPath}`);
       this.logToFile(logPath, `Command Template: ${command}`);
+      this.logToFile(logPath, `Target Install Path: ${defaultInstallPath}`);
       
       // Security: Validate installer path
       if (!fs.existsSync(fullInstallerPath)) {
@@ -254,7 +255,33 @@ class SetupFlowApp {
       this.logToFile(logPath, `Starting installation of ${name} at ${startTime.toISOString()}`);
       
       // Replace placeholder with actual path
-      const finalCommand = command.replace('{path}', `"${fullInstallerPath}"`);
+      let finalCommand = command.replace('{path}', `"${fullInstallerPath}"`);
+      
+      // Handle installPath replacement differently for different installer types
+      if (command.includes('/D={installPath}')) {
+        // NSIS installer (like Notepad++) - no quotes around path for /D parameter
+        finalCommand = finalCommand.replace('{installPath}', defaultInstallPath);
+      } else {
+        // Other installers - use quotes around path
+        finalCommand = finalCommand.replace('{installPath}', `"${defaultInstallPath}"`);
+      }
+      
+      // Create C:\apps directory if it doesn't exist
+      try {
+        const appsDir = 'C:\\apps';
+        
+        if (!fs.existsSync(appsDir)) {
+          this.logToFile(logPath, `Creating ${appsDir} directory...`);
+          await fs.ensureDir(appsDir);
+          this.logToFile(logPath, `Successfully created ${appsDir}`);
+        } else {
+          this.logToFile(logPath, `Directory ${appsDir} already exists`);
+        }
+        
+      } catch (error) {
+        this.logToFile(logPath, `Failed to create C:\\apps: ${error.message}`);
+        // Continue anyway - let the installer try to create it
+      }
       
       this.logToFile(logPath, `Final Command: ${finalCommand}`);
       this.logToFile(logPath, `Attempting to execute installer...`);
@@ -389,9 +416,13 @@ class SetupFlowApp {
         });
       }
 
-      // Ensure target directory exists
-      await fs.ensureDir(defaultInstallPath);
-      this.logToFile(logPath, `Created target directory: ${defaultInstallPath}`);
+      // Ensure target directory exists (skip for root drives)
+      if (defaultInstallPath !== 'C:\\' && defaultInstallPath !== 'D:\\' && !defaultInstallPath.match(/^[A-Z]:\\$/)) {
+        await fs.ensureDir(defaultInstallPath);
+        this.logToFile(logPath, `Created target directory: ${defaultInstallPath}`);
+      } else {
+        this.logToFile(logPath, `Using root drive: ${defaultInstallPath} - skipping directory creation for ZIP extraction`);
+      }
 
       // Extract ZIP using PowerShell (built into Windows)
       const extractCommand = `powershell -Command "Expand-Archive -Path '${fullInstallerPath}' -DestinationPath '${defaultInstallPath}' -Force"`;

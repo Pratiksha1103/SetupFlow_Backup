@@ -186,7 +186,7 @@ function App() {
       const result = await window.electronAPI.installSoftware({
         software: selectedSoftware.map(sw => ({
           ...sw,
-          installPath: customInstallPath
+          defaultInstallPath: sw.defaultInstallPath || customInstallPath
         })),
         profileId: null
       });
