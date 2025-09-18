@@ -1,5 +1,4 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
-
 const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
@@ -87,7 +86,7 @@ class SetupFlowApp {
       try {
         const installerFiles = await fs.readdir(this.appPaths.installers);
         return installerFiles.filter(file => 
-          file.endsWith('.msi') || file.endsWith('.exe') || file.endsWith('.pkg') || file.endsWith('.zip')
+          file.endsWith('.msi') || file.endsWith('.exe') || file.endsWith('.pkg')
         );
       } catch (error) {
         console.error('Error reading installers directory:', error);
@@ -199,45 +198,14 @@ class SetupFlowApp {
 
   async installSingleApp(appData, logPath) {
     return new Promise((resolve) => {
-      const { name, installerPath, command, requiresExtraction } = appData;
+      const { name, installerPath, command } = appData;
       const fullInstallerPath = path.join(this.appPaths.installers, installerPath);
-      
-      // Enhanced logging for debugging
-      this.logToFile(logPath, `=== INSTALLATION START ===`);
-      this.logToFile(logPath, `Software: ${name}`);
-      this.logToFile(logPath, `Installer Path: ${installerPath}`);
-      this.logToFile(logPath, `Full Path: ${fullInstallerPath}`);
-      this.logToFile(logPath, `Command Template: ${command}`);
       
       // Security: Validate installer path
       if (!fs.existsSync(fullInstallerPath)) {
         const error = `Installer not found: ${fullInstallerPath}`;
         this.logToFile(logPath, `ERROR: ${error}`);
-        console.error(`Installation failed: ${error}`);
         resolve({ name, success: false, error });
-        return;
-      }
-
-      // Check file size for progress estimation
-      const stats = fs.statSync(fullInstallerPath);
-      this.logToFile(logPath, `Installer size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
-
-      // Handle ZIP files that require extraction
-      if (requiresExtraction || installerPath.toLowerCase().endsWith('.zip')) {
-        this.logToFile(logPath, `INFO: ${name} is a ZIP file that requires manual extraction.`);
-        this.logToFile(logPath, `INFO: Please extract ${installerPath} manually and run the contained installer.`);
-        this.logToFile(logPath, `INFO: Location: ${fullInstallerPath}`);
-        
-        const endTime = new Date();
-        this.logToFile(logPath, `Processing of ${name} completed - Manual extraction required`);
-        
-        resolve({
-          name,
-          success: true, // Mark as "successful" since the file was found and identified
-          message: 'ZIP file requires manual extraction',
-          requiresManualAction: true,
-          duration: 1000
-        });
         return;
       }
 
@@ -247,17 +215,7 @@ class SetupFlowApp {
       // Replace placeholder with actual path
       const finalCommand = command.replace('{path}', `"${fullInstallerPath}"`);
       
-      this.logToFile(logPath, `Final Command: ${finalCommand}`);
-      this.logToFile(logPath, `Attempting to execute installer...`);
-      
-      // Send real-time progress update to UI
-      if (this.mainWindow) {
-        this.mainWindow.webContents.send('installation-progress', {
-          name,
-          status: 'starting',
-          message: 'Launching installer...'
-        });
-      }
+      this.logToFile(logPath, `Command: ${finalCommand}`);
       
       const child = spawn('cmd', ['/c', finalCommand], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -266,35 +224,17 @@ class SetupFlowApp {
 
       let stdout = '';
       let stderr = '';
-      let progressCounter = 0;
 
       child.stdout.on('data', (data) => {
-        const output = data.toString().trim();
-        if (output) {
-          stdout += output;
-          this.logToFile(logPath, `STDOUT: ${output}`);
-          console.log(`[${name}] STDOUT:`, output);
-          
-          // Send progress update
-          progressCounter++;
-          if (this.mainWindow && progressCounter % 5 === 0) {
-            this.mainWindow.webContents.send('installation-progress', {
-              name,
-              status: 'installing',
-              message: 'Installation in progress...',
-              progress: Math.min(50 + (progressCounter * 2), 90)
-            });
-          }
-        }
+        const output = data.toString();
+        stdout += output;
+        this.logToFile(logPath, `STDOUT: ${output}`);
       });
 
       child.stderr.on('data', (data) => {
-        const output = data.toString().trim();
-        if (output) {
-          stderr += output;
-          this.logToFile(logPath, `STDERR: ${output}`);
-          console.warn(`[${name}] STDERR:`, output);
-        }
+        const output = data.toString();
+        stderr += output;
+        this.logToFile(logPath, `STDERR: ${output}`);
       });
 
       child.on('close', (code) => {
@@ -302,24 +242,10 @@ class SetupFlowApp {
         const duration = endTime - startTime;
         
         this.logToFile(logPath, `Installation of ${name} completed with exit code ${code} in ${duration}ms`);
-        this.logToFile(logPath, `=== INSTALLATION END ===`);
-        
-        const success = code === 0;
-        console.log(`[${name}] Installation ${success ? 'SUCCESS' : 'FAILED'} (exit code: ${code})`);
-        
-        // Send final progress update
-        if (this.mainWindow) {
-          this.mainWindow.webContents.send('installation-progress', {
-            name,
-            status: success ? 'completed' : 'failed',
-            message: success ? 'Installation completed successfully!' : `Installation failed (exit code: ${code})`,
-            progress: success ? 100 : 0
-          });
-        }
         
         resolve({
           name,
-          success,
+          success: code === 0,
           exitCode: code,
           stdout,
           stderr,
@@ -329,19 +255,6 @@ class SetupFlowApp {
 
       child.on('error', (error) => {
         this.logToFile(logPath, `ERROR: ${error.message}`);
-        this.logToFile(logPath, `=== INSTALLATION ERROR ===`);
-        console.error(`[${name}] Installation error:`, error.message);
-        
-        // Send error update
-        if (this.mainWindow) {
-          this.mainWindow.webContents.send('installation-progress', {
-            name,
-            status: 'error',
-            message: `Error: ${error.message}`,
-            progress: 0
-          });
-        }
-        
         resolve({
           name,
           success: false,
