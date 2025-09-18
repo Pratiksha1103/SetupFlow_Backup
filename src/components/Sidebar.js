@@ -10,11 +10,18 @@ import {
   ListItemText,
   Checkbox,
   Divider,
-  Button
+  Button,
+  ButtonGroup,
+  Tooltip
 } from '@mui/material';
 import {
   Apps as AppsIcon,
-  GetApp as DownloadIcon
+  GetApp as DownloadIcon,
+  CheckBox as SelectAllIcon,
+  CheckBoxOutlineBlank as DeselectAllIcon,
+  SelectAll as SelectIcon,
+  Clear as ClearIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 
@@ -22,67 +29,18 @@ const Sidebar = () => {
   const { 
     availableSoftware, 
     selectedSoftware, 
-    handleSoftwareSelection 
+    handleSoftwareSelection,
+    handleSelectAll,
+    handleDeselectAll,
+    handleRefreshList,
+    getSoftwareInfo,    // Get this from context (App.js)
+    isRefreshing
   } = useAppContext();
 
   const [expandedSoftware, setExpandedSoftware] = useState(null);
 
-  // Mock software data with installation commands
-  const softwareDatabase = {
-    'notepad++': {
-      name: 'Notepad++',
-      version: '8.8.5',
-      description: 'Advanced text editor',
-      installerPath: 'npp.8.8.5.Installer.x64.exe',
-      command: '"{path}" /S /NCRC /D={installPath}',
-      defaultInstallPath: 'C:\\apps\\Notepad++',
-      supportsCustomPath: true
-    },
-    'eclipse': {
-      name: 'Eclipse IDE',
-      version: '2023-09',
-      description: 'Integrated Development Environment',
-      installerPath: 'eclipse-inst-jre-win64.exe',
-      command: '"{path}" -silent -nosplash -data "{installPath}\\workspace"',
-      defaultInstallPath: 'C:\\apps\\Eclipse',
-      supportsCustomPath: true
-    },
-    '7zip': {
-      name: '7-Zip',
-      version: '23.01',
-      description: 'File archiver with high compression ratio',
-      installerPath: '7z2301-x64.msi',
-      command: 'msiexec /i "{path}" /quiet /norestart /qn INSTALLDIR="{installPath}"',
-      defaultInstallPath: 'C:\\apps\\7-Zip',
-      supportsCustomPath: true
-    },
-    'git': {
-      name: 'Git',
-      version: '2.42.0',
-      description: 'Distributed version control system',
-      installerPath: 'Git-2.42.0.2-64-bit.exe',
-      command: '"{path}" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /DIR="{installPath}"',
-      defaultInstallPath: 'C:\\apps\\Git',
-      supportsCustomPath: true
-    }
-  };
-
-  const getSoftwareInfo = (filename) => {
-    const key = Object.keys(softwareDatabase).find(k => 
-      filename.toLowerCase().includes(k) || 
-      softwareDatabase[k].installerPath.toLowerCase() === filename.toLowerCase()
-    );
-    
-    return key ? softwareDatabase[key] : {
-      name: filename.replace(/\.[^/.]+$/, ""), // Remove extension
-      version: 'Unknown',
-      description: 'Software installer',
-      installerPath: filename,
-      command: `"{path}" /S`,
-      defaultInstallPath: `C:\\apps\\${filename.replace(/\.[^/.]+$/, "")}`,
-      supportsCustomPath: true
-    };
-  };
+  // Remove the duplicate softwareDatabase and getSoftwareInfo definitions
+  // They are now in App.js and accessed through context
 
   const isSelected = (software) => {
     return selectedSoftware.some(item => item.name === software.name);
@@ -95,8 +53,73 @@ const Sidebar = () => {
           <AppsIcon color="primary" />
           Applications
         </Typography>
+
+        {/* Status Display */}
+        {availableSoftware.length > 0 && (
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+            {selectedSoftware.length} of {availableSoftware.length} selected
+          </Typography>
+        )}
+
+        {/* Select All / Deselect All Buttons */}
+        {availableSoftware.length > 0 && (
+          <Box sx={{ mb: 2 }}>
+            <ButtonGroup variant="outlined" size="small" fullWidth>
+              <Tooltip title="Select All Software">
+                <Button
+                  onClick={handleSelectAll}
+                  startIcon={<SelectAllIcon />}
+                  disabled={selectedSoftware.length === availableSoftware.length}
+                  color={selectedSoftware.length === availableSoftware.length ? "success" : "primary"}
+                >
+                  All
+                </Button>
+              </Tooltip>
+              <Tooltip title="Clear Selection">
+                <Button
+                  onClick={handleDeselectAll}
+                  startIcon={<ClearIcon />}
+                  disabled={selectedSoftware.length === 0}
+                  color={selectedSoftware.length === 0 ? "secondary" : "error"}
+                >
+                  None
+                </Button>
+              </Tooltip>
+            </ButtonGroup>
+          </Box>
+        )}
         
-        <List dense>
+        <List 
+          dense 
+          sx={{
+            height: '230px',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            backgroundColor: '#fafafa',
+            border: '1px solid #e0e0e0',
+            borderRadius: '8px',
+            padding: '8px 4px',
+            '&::-webkit-scrollbar': {
+              width: '6px',
+            },
+            '&::-webkit-scrollbar-track': {
+              backgroundColor: '#f1f1f1',
+              borderRadius: '3px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              backgroundColor: '#6c757d',
+              borderRadius: '3px',
+              '&:hover': {
+                backgroundColor: '#5a6268',
+              },
+              '&:active': {
+                backgroundColor: '#495057',
+              },
+            },
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#6c757d #f1f1f1',
+          }}
+        >
           {availableSoftware.map((filename, index) => {
             const software = getSoftwareInfo(filename);
             const selected = isSelected(software);
@@ -157,16 +180,21 @@ const Sidebar = () => {
 
         <Button
           variant="outlined"
-          startIcon={<DownloadIcon />}
+          startIcon={<RefreshIcon />}
+          onClick={handleRefreshList}
+          disabled={isRefreshing}
           fullWidth
           size="small"
-          sx={{ mb: 1 }}
+          sx={{ 
+            mb: 1,
+            '&:disabled': {
+              opacity: 0.6
+            }
+          }}
         >
-          Refresh List
+          {isRefreshing ? 'Refreshing...' : 'Refresh List'}
         </Button>
       </Card>
-
-
     </Box>
   );
 };

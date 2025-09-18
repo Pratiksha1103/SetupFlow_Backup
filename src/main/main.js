@@ -54,9 +54,9 @@ class SetupFlowApp {
         contextIsolation: true,
         enableRemoteModule: false,
         preload: path.join(__dirname, 'preload.js'),
-        devTools: false  // Add this line to disable developer tools
+        devTools: false
       },
-      icon: path.join(__dirname, '../assets/icon.png'),
+      icon: path.join(__dirname, '../../src/assets/setupflow-logo.png'), // Fixed path
       show: false
     });
 

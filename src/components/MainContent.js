@@ -40,7 +40,43 @@ const MainContent = () => {
       <Grid container spacing={2} sx={{ height: '100%' }}>
         {/* Main Software Details Panel */}
         <Grid item xs={8}>
-          <Card sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Card sx={{ 
+            p: 3, 
+            height: '100%', 
+            display: 'flex', 
+            flexDirection: 'column',
+            overflow: 'hidden' // Add this
+          }}>
+            {/* Add scrollable container */}
+            <Box sx={{
+              flex: 1,
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              pr: 1, // Add padding for scrollbar
+              // Custom yellow scrollbar styles
+              '&::-webkit-scrollbar': {
+                width: '12px',
+              },
+              '&::-webkit-scrollbar-track': {
+                backgroundColor: '#f1f1f1',
+                borderRadius: '6px',
+                border: '1px solid #e0e0e0',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                backgroundColor: '#ffd700', // Yellow color
+                borderRadius: '6px',
+                border: '2px solid #f1f1f1',
+                '&:hover': {
+                  backgroundColor: '#ffed4e', // Lighter yellow on hover
+                },
+                '&:active': {
+                  backgroundColor: '#ffc107', // Darker yellow when active
+                },
+              },
+              '&::-webkit-scrollbar-corner': {
+                backgroundColor: '#f1f1f1',
+              },
+            }}>
             {selectedApp ? (
               <>
                 <Box sx={{ mb: 3 }}>
@@ -133,6 +169,7 @@ const MainContent = () => {
                 </Typography>
               </Box>
             )}
+          </Box>
           </Card>
         </Grid>
 

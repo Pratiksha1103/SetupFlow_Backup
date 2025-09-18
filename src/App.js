@@ -60,6 +60,63 @@ function App() {
   const [customInstallPath, setCustomInstallPath] = useState('C:\\apps');
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
 
+  // Software database - moved from Sidebar.js
+  const softwareDatabase = {
+    'notepad++': {
+      name: 'Notepad++',
+      version: '8.8.5',
+      description: 'Advanced text editor',
+      installerPath: 'npp.8.8.5.Installer.x64.exe',
+      command: '"{path}" /S /NCRC /D={installPath}',
+      defaultInstallPath: 'C:\\apps',
+      supportsCustomPath: true
+    },
+    'eclipse': {
+      name: 'Eclipse IDE',
+      version: '2023-09',
+      description: 'Integrated Development Environment',
+      installerPath: 'eclipse-inst-jre-win64.exe',
+      command: '"{path}" -silent -nosplash -data "{installPath}\\workspace"',
+      defaultInstallPath: 'C:\\apps',
+      supportsCustomPath: true
+    },
+    '7zip': {
+      name: '7-Zip',
+      version: '23.01',
+      description: 'File archiver with high compression ratio',
+      installerPath: '7z2301-x64.msi',
+      command: 'msiexec /i "{path}" /quiet /norestart /qn INSTALLDIR="{installPath}"',
+      defaultInstallPath: 'C:\\apps',
+      supportsCustomPath: true
+    },
+    'git': {
+      name: 'Git',
+      version: '2.42.0',
+      description: 'Distributed version control system',
+      installerPath: 'Git-2.42.0.2-64-bit.exe',
+      command: '"{path}" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /DIR="{installPath}"',
+      defaultInstallPath: 'C:\\apps',
+      supportsCustomPath: true
+    }
+  };
+
+  const getSoftwareInfo = (filename) => {
+    const key = Object.keys(softwareDatabase).find(k => 
+      filename.toLowerCase().includes(k) || 
+      softwareDatabase[k].installerPath.toLowerCase() === filename.toLowerCase()
+    );
+    
+    return key ? softwareDatabase[key] : {
+      name: filename.replace(/\.[^/.]+$/, ""),
+      version: 'Unknown',
+      description: 'Software installer',
+      installerPath: filename,
+      command: `"{path}" /S`,
+      defaultInstallPath: 'C:\\apps',
+      supportsCustomPath: true
+    };
+  };
+
   useEffect(() => {
     loadInitialData();
   }, []);
@@ -96,6 +153,22 @@ function App() {
         return [...prev, software];
       }
     });
+  };
+
+  // Add these new functions
+  const handleSelectAll = () => {
+    // Use getSoftwareInfo to get proper software objects for all available software
+    const allSoftware = availableSoftware.map(filename => getSoftwareInfo(filename));
+    setSelectedSoftware(allSoftware);
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedSoftware([]);
+  };
+
+  // Add refresh functionality
+  const handleRefreshList = () => {
+    loadInitialData(); // This will reload the available software list
   };
 
   const handleInstallation = async () => {
@@ -191,7 +264,12 @@ function App() {
     setCustomInstallPath,
     notification,
     setNotification,
+    softwareDatabase,
+    getSoftwareInfo,
     handleSoftwareSelection,
+    handleSelectAll,
+    handleDeselectAll,
+    handleRefreshList,        // Add this
     handleInstallation,
     loadInitialData,
     setProfiles,
@@ -202,13 +280,51 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AppProvider value={appContextValue}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-          <Header />
-          <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-            <Sidebar />
-            <MainContent />
+        {/* Main scrollable container for whole screen */}
+        <Box sx={{ 
+          height: '100vh',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          // Custom grey scrollbar styles for whole screen
+          '&::-webkit-scrollbar': {
+            width: '14px',
+          },
+          '&::-webkit-scrollbar-track': {
+            backgroundColor: '#f8f9fa',
+            borderRadius: '7px',
+            border: '1px solid #dee2e6',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            backgroundColor: '#6c757d', // Grey color
+            borderRadius: '7px',
+            border: '2px solid #f8f9fa',
+            boxShadow: 'inset 0 0 4px rgba(0,0,0,0.1)',
+            '&:hover': {
+              backgroundColor: '#5a6268', // Darker grey on hover
+              boxShadow: 'inset 0 0 6px rgba(0,0,0,0.2)',
+            },
+            '&:active': {
+              backgroundColor: '#495057', // Darkest grey when active
+              boxShadow: 'inset 0 0 8px rgba(0,0,0,0.3)',
+            },
+          },
+          '&::-webkit-scrollbar-corner': {
+            backgroundColor: '#f8f9fa',
+          },
+        }}>
+          {/* Content container - now scrollable */}
+          <Box sx={{ 
+            minHeight: '100vh', // Minimum height to ensure content fills screen
+            display: 'flex', 
+            flexDirection: 'column' 
+          }}>
+            <Header />
+            <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+              <Sidebar />
+              <MainContent />
+            </Box>
+            <LogsPanel />
           </Box>
-          <LogsPanel />
         </Box>
         
         {/* Notification Snackbar */}

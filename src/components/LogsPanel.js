@@ -98,7 +98,30 @@ const LogsPanel = () => {
           <Box sx={{ display: 'flex', height: 220 }}>
             {/* Logs List */}
             <Box sx={{ width: '40%', borderRight: '1px solid', borderColor: 'divider' }}>
-              <List dense sx={{ height: '100%', overflow: 'auto' }}>
+              <List dense sx={{ 
+                height: '100%', 
+                overflow: 'auto',
+                // Custom grey scrollbar styles for logs list
+                '&::-webkit-scrollbar': {
+                  width: '10px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '5px',
+                  border: '1px solid #dee2e6',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  backgroundColor: '#6c757d', // Grey color
+                  borderRadius: '5px',
+                  border: '1px solid #f8f9fa',
+                  '&:hover': {
+                    backgroundColor: '#5a6268', // Darker grey on hover
+                  },
+                  '&:active': {
+                    backgroundColor: '#495057', // Darkest grey when active
+                  },
+                },
+              }}>
                 {logs.length === 0 ? (
                   <ListItem>
                     <ListItemText
@@ -143,7 +166,36 @@ const LogsPanel = () => {
             </Box>
 
             {/* Log Content */}
-            <Box sx={{ flex: 1, p: 2 }}>
+            <Box sx={{ 
+              flex: 1, 
+              p: 2, 
+              backgroundColor: 'grey.900', 
+              color: 'white',
+              overflow: 'auto',
+              // Custom grey scrollbar styles for log content
+              '&::-webkit-scrollbar': {
+                width: '10px',
+                height: '10px',
+              },
+              '&::-webkit-scrollbar-track': {
+                backgroundColor: '#2d3748',
+                borderRadius: '5px',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                backgroundColor: '#6c757d', // Grey color
+                borderRadius: '5px',
+                border: '1px solid #2d3748',
+                '&:hover': {
+                  backgroundColor: '#5a6268', // Darker grey on hover
+                },
+                '&:active': {
+                  backgroundColor: '#495057', // Darkest grey when active
+                },
+              },
+              '&::-webkit-scrollbar-corner': {
+                backgroundColor: '#2d3748',
+              },
+            }}>
               {selectedLog ? (
                 <Paper 
                   sx={{ 
