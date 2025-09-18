@@ -46,7 +46,8 @@ const LogsPanel = () => {
         setLogContent(result.content);
       }
     } catch (error) {
-      console.error('Failed to read log:', error);
+      // console.error('Failed to read log:', error);
+      setLogContent('Failed to load log content.');
     }
   };
 
