@@ -28,34 +28,72 @@ echo.
 
 :: Check Node.js
 echo Checking dependencies...
+
+:: First try the PATH
 where node >nul 2>&1
-if %errorLevel% neq 0 (
-    echo [ERROR] Node.js is not installed or not in PATH
-    echo.
-    echo Please install Node.js from: https://nodejs.org/
-    echo After installation, restart this script.
-    echo.
-    echo Press any key to exit...
-    pause >nul
-    exit /b 1
-) else (
+if %errorLevel% equ 0 (
     for /f "tokens=*" %%i in ('node --version 2^>nul') do set NODE_VERSION=%%i
-    echo [OK] Node.js found - Version: !NODE_VERSION!
+    echo [OK] Node.js found in PATH - Version: !NODE_VERSION!
+    goto :npm_check
 )
+
+:: Try common installation paths
+set NODE_PATHS[0]="%ProgramFiles%\nodejs\node.exe"
+set NODE_PATHS[1]="%ProgramFiles(x86)%\nodejs\node.exe"
+set NODE_PATHS[2]="%APPDATA%\npm\node.exe"
+set NODE_PATHS[3]="%LOCALAPPDATA%\Programs\nodejs\node.exe"
+set NODE_PATHS[4]="%USERPROFILE%\AppData\Roaming\npm\node.exe"
+
+for /L %%i in (0,1,4) do (
+    call set "NODE_PATH=%%NODE_PATHS[%%i]%%"
+    if exist !NODE_PATH! (
+        for /f "tokens=*" %%v in ('!NODE_PATH! --version 2^>nul') do set NODE_VERSION=%%v
+        echo [OK] Node.js found at !NODE_PATH! - Version: !NODE_VERSION!
+        set "PATH=!PATH!;%ProgramFiles%\nodejs;%ProgramFiles(x86)%\nodejs"
+        goto :npm_check
+    )
+)
+
+echo [ERROR] Node.js is not installed or not found
+echo.
+echo Please install Node.js from: https://nodejs.org/
+echo After installation, restart this script.
+echo.
+echo Press any key to exit...
+pause >nul
+exit /b 1
+
+:npm_check
 
 :: Check npm
 where npm >nul 2>&1
-if %errorLevel% neq 0 (
-    echo [ERROR] npm is not installed or not in PATH
-    echo        npm usually comes with Node.js installation
-    echo.
-    echo Press any key to exit...
-    pause >nul
-    exit /b 1
-) else (
+if %errorLevel% equ 0 (
     for /f "tokens=*" %%i in ('npm --version 2^>nul') do set NPM_VERSION=%%i
-    echo [OK] npm found - Version: !NPM_VERSION!
+    echo [OK] npm found in PATH - Version: !NPM_VERSION!
+    goto :package_check
 )
+
+:: Try common npm paths
+if exist "%ProgramFiles%\nodejs\npm.cmd" (
+    for /f "tokens=*" %%v in ('"%ProgramFiles%\nodejs\npm.cmd" --version 2^>nul') do set NPM_VERSION=%%v
+    echo [OK] npm found at %ProgramFiles%\nodejs\ - Version: !NPM_VERSION!
+    goto :package_check
+)
+
+if exist "%ProgramFiles(x86)%\nodejs\npm.cmd" (
+    for /f "tokens=*" %%v in ('"%ProgramFiles(x86)%\nodejs\npm.cmd" --version 2^>nul') do set NPM_VERSION=%%v
+    echo [OK] npm found at %ProgramFiles(x86)%\nodejs\ - Version: !NPM_VERSION!
+    goto :package_check
+)
+
+echo [ERROR] npm is not installed or not found
+echo        npm usually comes with Node.js installation
+echo.
+echo Press any key to exit...
+pause >nul
+exit /b 1
+
+:package_check
 
 echo.
 
