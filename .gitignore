@@ -130,12 +130,13 @@ Thumbs.db
 # SetupFlow specific
 profiles/*.json
 logs/*.log
-installers/*.exe
-installers/*.msi
-installers/*.pkg
+
+# Ignore ALL files in installers directory (but keep the directory structure)
+installers/*
+!installers/
+!installers/README.md
 
 # Keep README files in directories
-!installers/README.md
 !profiles/README.md
 !logs/README.md
 
