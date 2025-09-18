@@ -671,6 +671,8 @@ class SetupFlowApp {
       
       if (await fs.pathExists(httpdConf)) {
         this.logToFile(logPath, `✓ Apache configuration found: ${httpdConf}`);
+        // Auto-fix ServerRoot path in configuration
+        await this.fixApacheServerRoot(httpdConf, httpdPath, logPath);
       } else {
         this.logToFile(logPath, `⚠ Warning: Apache configuration not found at ${httpdConf}`);
         validInstallation = false;
@@ -704,12 +706,151 @@ class SetupFlowApp {
         this.logToFile(logPath, `To start service: ${httpdExe} -k start`);
         this.logToFile(logPath, `To stop service: ${httpdExe} -k stop`);
         this.logToFile(logPath, `To uninstall service: ${httpdExe} -k uninstall`);
+        
+        // Auto-start Apache HTTP Server
+        await this.autoStartApacheHttpd(httpdExe, logPath);
       } else {
         this.logToFile(logPath, `⚠ Apache installation may be incomplete - some components missing`);
       }
       
     } catch (error) {
       this.logToFile(logPath, `Warning: Failed to setup Apache HTTP Server environment: ${error.message}`);
+    }
+  }
+
+  async fixApacheServerRoot(httpdConfPath, actualRootPath, logPath) {
+    try {
+      this.logToFile(logPath, `Fixing Apache ServerRoot configuration...`);
+      
+      // Read the configuration file
+      const configContent = await fs.readFile(httpdConfPath, 'utf8');
+      
+      // Convert Windows path to Apache format (forward slashes)
+      const apacheRootPath = actualRootPath.replace(/\\/g, '/');
+      
+      // Replace ServerRoot definition
+      const updatedConfig = configContent.replace(
+        /Define SRVROOT ".*?"/,
+        `Define SRVROOT "${apacheRootPath}"`
+      );
+      
+      // Write the updated configuration back
+      await fs.writeFile(httpdConfPath, updatedConfig, 'utf8');
+      
+      this.logToFile(logPath, `✓ ServerRoot automatically fixed to: ${apacheRootPath}`);
+      
+      // Validate the configuration
+      const httpdExe = path.join(actualRootPath, 'bin', 'httpd.exe');
+      if (await fs.pathExists(httpdExe)) {
+        this.logToFile(logPath, `Validating Apache configuration...`);
+        
+        const testResult = await new Promise((resolve) => {
+          const child = spawn(httpdExe, ['-t'], { 
+            stdio: ['pipe', 'pipe', 'pipe'],
+            cwd: path.join(actualRootPath, 'bin')
+          });
+          
+          let output = '';
+          child.stdout.on('data', (data) => { output += data.toString(); });
+          child.stderr.on('data', (data) => { output += data.toString(); });
+          
+          child.on('close', (code) => {
+            resolve({ code, output: output.trim() });
+          });
+        });
+        
+        if (testResult.code === 0) {
+          this.logToFile(logPath, `✓ Apache configuration is valid: ${testResult.output}`);
+        } else {
+          this.logToFile(logPath, `⚠ Warning: Configuration test failed: ${testResult.output}`);
+        }
+      }
+      
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to fix ServerRoot configuration: ${error.message}`);
+    }
+  }
+
+  async autoStartApacheHttpd(httpdExePath, logPath) {
+    try {
+      this.logToFile(logPath, `Auto-starting Apache HTTP Server...`);
+      
+      // Start Apache in background using PowerShell
+      const startCommand = `powershell -Command "Start-Process -FilePath '${httpdExePath}' -WindowStyle Hidden"`;
+      
+      const startResult = await new Promise((resolve) => {
+        const child = spawn('powershell', [
+          '-Command', 
+          `Start-Process -FilePath '${httpdExePath}' -WindowStyle Hidden`
+        ], { 
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stderr = '';
+        child.stderr.on('data', (data) => { stderr += data.toString(); });
+        
+        child.on('close', (code) => {
+          resolve({ code, stderr: stderr.trim() });
+        });
+        
+        child.on('error', (err) => {
+          resolve({ code: -1, stderr: err.message });
+        });
+      });
+      
+      if (startResult.code === 0) {
+        this.logToFile(logPath, `✓ Apache HTTP Server started successfully in background`);
+        
+        // Wait a moment and verify it's running
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Test if server is responding
+        try {
+          this.logToFile(logPath, `Testing Apache HTTP Server response...`);
+          
+          const testResult = await new Promise((resolve) => {
+            const child = spawn('powershell', [
+              '-Command', 
+              'Invoke-WebRequest -Uri "http://localhost" -UseBasicParsing -TimeoutSec 5'
+            ], { 
+              stdio: ['pipe', 'pipe', 'pipe'],
+              shell: true
+            });
+            
+            let stdout = '';
+            let stderr = '';
+            child.stdout.on('data', (data) => { stdout += data.toString(); });
+            child.stderr.on('data', (data) => { stderr += data.toString(); });
+            
+            child.on('close', (code) => {
+              resolve({ code, stdout: stdout.trim(), stderr: stderr.trim() });
+            });
+          });
+          
+          if (testResult.code === 0 && testResult.stdout.includes('StatusCode        : 200')) {
+            this.logToFile(logPath, `✅ SUCCESS: Apache HTTP Server is running and responding!`);
+            this.logToFile(logPath, `🌐 Website accessible at: http://localhost`);
+            this.logToFile(logPath, `📊 Server Status: HTTP 200 OK - "It works!" page served`);
+          } else {
+            this.logToFile(logPath, `⚠ Apache started but may not be fully ready yet. Try accessing http://localhost in a few moments.`);
+          }
+          
+        } catch (testError) {
+          this.logToFile(logPath, `Apache started but connection test failed: ${testError.message}`);
+        }
+        
+      } else {
+        this.logToFile(logPath, `⚠ Warning: Failed to start Apache HTTP Server automatically (exit code: ${startResult.code})`);
+        if (startResult.stderr) {
+          this.logToFile(logPath, `Error details: ${startResult.stderr}`);
+        }
+        this.logToFile(logPath, `You can start Apache manually by running: ${httpdExePath}`);
+      }
+      
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to auto-start Apache HTTP Server: ${error.message}`);
+      this.logToFile(logPath, `You can start Apache manually by running: ${httpdExePath}`);
     }
   }
 
