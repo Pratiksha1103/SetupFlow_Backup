@@ -5,6 +5,7 @@ import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 import LogsPanel from './components/LogsPanel';
+import EchoTower from './components/ai/EchoTower';
 import { AppProvider } from './context/AppContext';
 import './App.css';
 
@@ -209,6 +210,7 @@ function App() {
             <MainContent />
           </Box>
           <LogsPanel />
+          <EchoTower />
         </Box>
         
         {/* Notification Snackbar */}
