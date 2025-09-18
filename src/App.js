@@ -5,7 +5,6 @@ import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 import LogsPanel from './components/LogsPanel';
-import InstallationModal from './components/InstallationModal';
 import { AppProvider } from './context/AppContext';
 import './App.css';
 
@@ -58,6 +57,7 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [isInstalling, setIsInstalling] = useState(false);
   const [installationProgress, setInstallationProgress] = useState(null);
+  const [customInstallPath, setCustomInstallPath] = useState('C:\\apps');
 
   useEffect(() => {
     loadInitialData();
@@ -105,7 +105,10 @@ function App() {
 
     try {
       const result = await window.electronAPI.installSoftware({
-        software: selectedSoftware,
+        software: selectedSoftware.map(sw => ({
+          ...sw,
+          installPath: customInstallPath + '\\' + sw.name.replace(/[^a-zA-Z0-9]/g, '')
+        })),
         profileId: null
       });
 
@@ -130,6 +133,8 @@ function App() {
     logs,
     isInstalling,
     installationProgress,
+    customInstallPath,
+    setCustomInstallPath,
     handleSoftwareSelection,
     handleInstallation,
     loadInitialData,
@@ -148,7 +153,6 @@ function App() {
             <MainContent />
           </Box>
           <LogsPanel />
-          <InstallationModal />
         </Box>
       </AppProvider>
     </ThemeProvider>

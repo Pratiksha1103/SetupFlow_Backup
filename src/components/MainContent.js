@@ -11,12 +11,15 @@ import {
   ListItemText,
   Divider,
   Alert,
-  Paper
+  Paper,
+  TextField,
+  InputAdornment
 } from '@mui/material';
 import {
   PlayArrow as InstallIcon,
   Info as InfoIcon,
-  CheckCircle as CheckIcon
+  CheckCircle as CheckIcon,
+  Folder as FolderIcon
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 
@@ -24,7 +27,9 @@ const MainContent = () => {
   const { 
     selectedSoftware, 
     handleInstallation, 
-    isInstalling 
+    isInstalling,
+    customInstallPath,
+    setCustomInstallPath
   } = useAppContext();
 
   const selectedApp = selectedSoftware.length > 0 ? selectedSoftware[0] : null;
@@ -142,6 +147,41 @@ const MainContent = () => {
                 <Alert severity="info" sx={{ mb: 3 }}>
                   {selectedSoftware.length} software package{selectedSoftware.length > 1 ? 's' : ''} selected for installation
                 </Alert>
+
+                {/* Custom Installation Path */}
+                <Box sx={{ mb: 3 }}>
+                  <TextField
+                    fullWidth
+                    label="Installation Base Path"
+                    value={customInstallPath}
+                    onChange={(e) => setCustomInstallPath(e.target.value)}
+                    placeholder="C:\apps"
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <FolderIcon />
+                        </InputAdornment>
+                      ),
+                    }}
+                    helperText="Software will be installed in subfolders under this path"
+                    variant="outlined"
+                    size="small"
+                  />
+                </Box>
+
+                {/* Show installation paths preview */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Installation Paths:
+                  </Typography>
+                  <Paper sx={{ p: 2, backgroundColor: 'grey.50' }}>
+                    {selectedSoftware.map((software, index) => (
+                      <Typography key={index} variant="body2" sx={{ fontSize: '0.8rem', mb: 0.5 }}>
+                        <strong>{software.name}:</strong> {customInstallPath}\\{software.name.replace(/[^a-zA-Z0-9]/g, '')}
+                      </Typography>
+                    ))}
+                  </Paper>
+                </Box>
 
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <Button

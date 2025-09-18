@@ -212,8 +212,13 @@ class SetupFlowApp {
       const startTime = new Date();
       this.logToFile(logPath, `Starting installation of ${name} at ${startTime.toISOString()}`);
       
-      // Replace placeholder with actual path
-      const finalCommand = command.replace('{path}', `"${fullInstallerPath}"`);
+      // Replace placeholder with actual path and custom install path
+      let finalCommand = command.replace('{path}', `"${fullInstallerPath}"`);
+      
+      // Handle custom installation path
+      if (appData.installPath && command.includes('{installPath}')) {
+        finalCommand = finalCommand.replace('{installPath}', appData.installPath);
+      }
       
       this.logToFile(logPath, `Command: ${finalCommand}`);
       

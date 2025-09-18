@@ -8,18 +8,12 @@ import {
   Chip
 } from '@mui/material';
 import {
-  Speed as SpeedIcon,
   Settings as SettingsIcon
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 
 const Header = () => {
   const { availableSoftware, selectedSoftware } = useAppContext();
-
-  const handleFastAPIClick = () => {
-    // Future implementation for Fast API functionality
-    console.log('Fast API clicked - Future feature');
-  };
 
   return (
     <AppBar 
@@ -43,22 +37,6 @@ const Header = () => {
           >
             SetupFlow
           </Typography>
-          
-          <Button
-            variant="outlined"
-            startIcon={<SpeedIcon />}
-            onClick={handleFastAPIClick}
-            sx={{
-              borderColor: '#dc004e',
-              color: '#dc004e',
-              '&:hover': {
-                borderColor: '#dc004e',
-                backgroundColor: 'rgba(220, 0, 78, 0.04)'
-              }
-            }}
-          >
-            Fast API
-          </Button>
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
