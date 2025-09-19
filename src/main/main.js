@@ -90,7 +90,7 @@ class SetupFlowApp {
     return {
       userData: userDataPath,
       profiles: path.join(userDataPath, 'profiles'),
-      logs: path.join(userDataPath, 'logs'),
+      logs: 'C:\\apps\\logs',
       installers: path.join(process.cwd(), 'installers'),
       config: path.join(userDataPath, 'config.json')
     };
