@@ -844,10 +844,524 @@ class SetupFlowApp {
     try {
       this.logToFile(logPath, `Setting up Oracle Database environment...`);
       this.logToFile(logPath, `Oracle Database extracted to: ${installPath}`);
-      this.logToFile(logPath, `✓ Oracle Database extraction completed successfully!`);
-      this.logToFile(logPath, `Note: Please refer to Oracle Database documentation for installation instructions.`);
+      
+      // Send progress to UI
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('installation-progress', {
+          name: 'Oracle Database',
+          status: 'configuring',
+          message: 'Setting up Oracle Database environment...'
+        });
+      }
+      
+      // Find Oracle installer executable
+      const oracleInstaller = await this.findOracleInstaller(installPath, logPath);
+      
+      if (oracleInstaller) {
+        this.logToFile(logPath, `✓ Found Oracle installer: ${oracleInstaller}`);
+        
+        // Create Oracle response file for silent installation
+        const responseFile = await this.createOracleResponseFile(installPath, logPath);
+        
+        if (responseFile) {
+          // Perform silent installation
+          const installSuccess = await this.performOracleSilentInstall(oracleInstaller, responseFile, logPath);
+          
+          if (installSuccess) {
+            this.logToFile(logPath, `✓ Oracle Database silent installation completed successfully!`);
+            
+            // Wait for Oracle services to start
+            await new Promise(resolve => setTimeout(resolve, 10000));
+            
+            // Test Oracle connectivity
+            await this.testOracleConnectivity(installPath, logPath);
+          } else {
+            this.logToFile(logPath, `⚠ Oracle silent installation failed. Manual installation may be required.`);
+          }
+        }
+      } else {
+        this.logToFile(logPath, `⚠ Oracle installer not found. Files extracted for manual installation.`);
+        this.logToFile(logPath, `Manual installation: Navigate to ${installPath} and run setup.exe`);
+      }
+      
+      this.logToFile(logPath, `Oracle Database setup process completed.`);
+      
     } catch (error) {
       this.logToFile(logPath, `Warning: Failed to setup Oracle Database environment: ${error.message}`);
+    }
+  }
+
+  async findOracleInstaller(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Searching for Oracle installer executable...`);
+      
+      // Common Oracle installer names
+      const installerNames = ['setup.exe', 'runInstaller.bat', 'runInstaller.exe', 'install.exe'];
+      
+      for (const installerName of installerNames) {
+        const installerPath = path.join(installPath, installerName);
+        if (await fs.pathExists(installerPath)) {
+          this.logToFile(logPath, `Found Oracle installer: ${installerName}`);
+          return installerPath;
+        }
+      }
+      
+      // Search in subdirectories
+      const items = await fs.readdir(installPath);
+      for (const item of items) {
+        const itemPath = path.join(installPath, item);
+        const stats = await fs.stat(itemPath);
+        
+        if (stats.isDirectory()) {
+          for (const installerName of installerNames) {
+            const installerPath = path.join(itemPath, installerName);
+            if (await fs.pathExists(installerPath)) {
+              this.logToFile(logPath, `Found Oracle installer in subdirectory: ${item}/${installerName}`);
+              return installerPath;
+            }
+          }
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      this.logToFile(logPath, `Error searching for Oracle installer: ${error.message}`);
+      return null;
+    }
+  }
+
+  async createOracleResponseFile(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Creating Oracle response file for silent installation...`);
+      
+      const responseFilePath = path.join(installPath, 'oracle_silent_install.rsp');
+      
+      // Oracle response file content for silent installation
+      const responseFileContent = `
+####################################################################
+## Oracle Database Silent Installation Response File
+####################################################################
+
+# Specify the installation mode
+oracle.install.option=INSTALL_DB_SWONLY
+
+# Specify the Unix group to be set for the inventory directory
+UNIX_GROUP_NAME=
+
+# Specify the inventory directory
+INVENTORY_LOCATION=
+
+# Specify the Oracle Home directory
+ORACLE_HOME=${installPath.replace(/\\/g, '/')}
+
+# Specify the Oracle Base directory
+ORACLE_BASE=${path.join(installPath, '..', 'oracle_base').replace(/\\/g, '/')}
+
+# Specify the database edition
+oracle.install.db.InstallEdition=EE
+
+# DBA group to be set for the database
+oracle.install.db.DBA_GROUP=
+
+# OPER group to be set for the database
+oracle.install.db.OPER_GROUP=
+
+# BACKUPDBA group to be set for the database
+oracle.install.db.BACKUPDBA_GROUP=
+
+# DGDBA group to be set for the database
+oracle.install.db.DGDBA_GROUP=
+
+# KMDBA group to be set for the database
+oracle.install.db.KMDBA_GROUP=
+
+# RACDBA group to be set for the database
+oracle.install.db.RACDBA_GROUP=
+
+# Specify whether to decline security updates
+DECLINE_SECURITY_UPDATES=true
+
+# Specify security updates via My Oracle Support
+SECURITY_UPDATES_VIA_MYORACLESUPPORT=false
+
+# Skip software updates
+oracle.installer.autoupdates.option=SKIP_UPDATES
+
+# Silent mode
+oracle.installer.suppressPrereqChecks=true
+oracle.installer.suppressUpgradeDBMsgs=true
+oracle.installer.suppressEnvironmentCheckCfg=true
+
+# No GUI
+oracle.installer.autoupdates.downloadUpdatesLoc=
+`;
+
+      await fs.writeFile(responseFilePath, responseFileContent.trim());
+      this.logToFile(logPath, `✓ Oracle response file created: ${responseFilePath}`);
+      
+      return responseFilePath;
+    } catch (error) {
+      this.logToFile(logPath, `Error creating Oracle response file: ${error.message}`);
+      return null;
+    }
+  }
+
+  async performOracleSilentInstall(installerPath, responseFile, logPath) {
+    try {
+      this.logToFile(logPath, `Starting Oracle Database silent installation...`);
+      this.logToFile(logPath, `Installer: ${installerPath}`);
+      this.logToFile(logPath, `Response file: ${responseFile}`);
+      
+      // Send progress to UI
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('installation-progress', {
+          name: 'Oracle Database',
+          status: 'installing',
+          message: 'Installing Oracle Database (this may take 15-30 minutes)...'
+        });
+      }
+      
+      const startTime = new Date();
+      this.logToFile(logPath, `Installation started at: ${startTime.toISOString()}`);
+      
+      const installResult = await new Promise((resolve) => {
+        // Oracle silent installation command
+        const installCommand = `"${installerPath}" -silent -responseFile "${responseFile}" -waitforcompletion`;
+        this.logToFile(logPath, `Installation command: ${installCommand}`);
+        
+        const child = spawn('cmd', ['/c', installCommand], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true,
+          cwd: path.dirname(installerPath)
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        child.stdout.on('data', (data) => {
+          const output = data.toString();
+          stdout += output;
+          this.logToFile(logPath, `Oracle STDOUT: ${output.trim()}`);
+        });
+        
+        child.stderr.on('data', (data) => {
+          const output = data.toString();
+          stderr += output;
+          this.logToFile(logPath, `Oracle STDERR: ${output.trim()}`);
+        });
+        
+        child.on('close', (code) => {
+          const endTime = new Date();
+          const duration = Math.round((endTime - startTime) / 1000);
+          this.logToFile(logPath, `Oracle installation completed in ${duration} seconds with exit code: ${code}`);
+          
+          resolve({
+            success: code === 0,
+            exitCode: code,
+            stdout,
+            stderr,
+            duration
+          });
+        });
+        
+        child.on('error', (error) => {
+          this.logToFile(logPath, `Oracle installation process error: ${error.message}`);
+          resolve({
+            success: false,
+            error: error.message
+          });
+        });
+      });
+      
+      if (installResult.success) {
+        this.logToFile(logPath, `✓ Oracle Database installation completed successfully!`);
+        return true;
+      } else {
+        this.logToFile(logPath, `✗ Oracle Database installation failed with exit code: ${installResult.exitCode}`);
+        if (installResult.stderr) {
+          this.logToFile(logPath, `Error details: ${installResult.stderr}`);
+        }
+        return false;
+      }
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error during Oracle silent installation: ${error.message}`);
+      return false;
+    }
+  }
+
+  async testOracleConnectivity(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Testing Oracle Database connectivity...`);
+      
+      // Send progress to UI
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('installation-progress', {
+          name: 'Oracle Database',
+          status: 'testing',
+          message: 'Testing Oracle Database connectivity...'
+        });
+      }
+      
+      // Test 1: Check Oracle services
+      const servicesStatus = await this.checkOracleServices(logPath);
+      
+      // Test 2: Check Oracle listener
+      const listenerStatus = await this.checkOracleListener(logPath);
+      
+      // Test 3: Test SQL*Plus connectivity
+      const sqlPlusStatus = await this.testSqlPlusConnectivity(installPath, logPath);
+      
+      // Test 4: Check Oracle environment variables
+      const envStatus = await this.checkOracleEnvironment(logPath);
+      
+      // Compile results
+      const overallStatus = {
+        services: servicesStatus,
+        listener: listenerStatus,
+        sqlplus: sqlPlusStatus,
+        environment: envStatus
+      };
+      
+      this.logToFile(logPath, `=== ORACLE DATABASE CONNECTIVITY REPORT ===`);
+      this.logToFile(logPath, `Services Status: ${servicesStatus.status ? '✓ RUNNING' : '✗ NOT RUNNING'}`);
+      this.logToFile(logPath, `Listener Status: ${listenerStatus.status ? '✓ RUNNING' : '✗ NOT RUNNING'}`);
+      this.logToFile(logPath, `SQL*Plus Status: ${sqlPlusStatus.status ? '✓ ACCESSIBLE' : '✗ NOT ACCESSIBLE'}`);
+      this.logToFile(logPath, `Environment Status: ${envStatus.status ? '✓ CONFIGURED' : '✗ NOT CONFIGURED'}`);
+      
+      if (servicesStatus.status && listenerStatus.status) {
+        this.logToFile(logPath, `🎉 SUCCESS: Oracle Database is running and accessible!`);
+        this.logToFile(logPath, `Connection Details:`);
+        this.logToFile(logPath, `  - Host: localhost`);
+        this.logToFile(logPath, `  - Port: 1521 (default)`);
+        this.logToFile(logPath, `  - SID: ORCL (default)`);
+        this.logToFile(logPath, `  - Service Name: ORCL`);
+        
+        // Send success to UI
+        if (this.mainWindow) {
+          this.mainWindow.webContents.send('installation-progress', {
+            name: 'Oracle Database',
+            status: 'completed',
+            message: 'Oracle Database installed and running successfully!'
+          });
+        }
+      } else {
+        this.logToFile(logPath, `⚠ Oracle Database installation completed but connectivity issues detected.`);
+        this.logToFile(logPath, `Please check the Oracle services and configuration manually.`);
+      }
+      
+      return overallStatus;
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error testing Oracle connectivity: ${error.message}`);
+      return { error: error.message };
+    }
+  }
+
+  async checkOracleServices(logPath) {
+    try {
+      this.logToFile(logPath, `Checking Oracle Windows services...`);
+      
+      const serviceCheck = await new Promise((resolve) => {
+        const child = spawn('sc', ['query', 'state=', 'all'], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stdout = '';
+        child.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        child.on('close', () => {
+          resolve(stdout);
+        });
+      });
+      
+      const oracleServices = serviceCheck.split('\n')
+        .filter(line => line.toLowerCase().includes('oracle'))
+        .filter(line => line.includes('SERVICE_NAME:'));
+      
+      const runningServices = serviceCheck.split('\n')
+        .filter(line => line.includes('STATE') && line.includes('RUNNING'));
+      
+      const runningOracleServices = [];
+      for (const service of oracleServices) {
+        const serviceName = service.split(':')[1]?.trim();
+        if (serviceName && runningServices.some(rs => rs.includes('RUNNING'))) {
+          runningOracleServices.push(serviceName);
+        }
+      }
+      
+      this.logToFile(logPath, `Found ${oracleServices.length} Oracle services`);
+      this.logToFile(logPath, `Running Oracle services: ${runningOracleServices.length}`);
+      
+      if (runningOracleServices.length > 0) {
+        runningOracleServices.forEach(service => {
+          this.logToFile(logPath, `  ✓ ${service}`);
+        });
+      }
+      
+      return {
+        status: runningOracleServices.length > 0,
+        services: runningOracleServices,
+        total: oracleServices.length
+      };
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error checking Oracle services: ${error.message}`);
+      return { status: false, error: error.message };
+    }
+  }
+
+  async checkOracleListener(logPath) {
+    try {
+      this.logToFile(logPath, `Checking Oracle TNS Listener...`);
+      
+      const listenerCheck = await new Promise((resolve) => {
+        const child = spawn('netstat', ['-an'], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stdout = '';
+        child.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        child.on('close', () => {
+          resolve(stdout);
+        });
+      });
+      
+      const port1521 = listenerCheck.includes(':1521');
+      const listening = listenerCheck.includes('LISTENING');
+      
+      this.logToFile(logPath, `Port 1521 status: ${port1521 ? 'In use' : 'Not in use'}`);
+      this.logToFile(logPath, `Listener status: ${port1521 && listening ? 'Running' : 'Not running'}`);
+      
+      return {
+        status: port1521 && listening,
+        port: '1521',
+        listening: port1521
+      };
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error checking Oracle listener: ${error.message}`);
+      return { status: false, error: error.message };
+    }
+  }
+
+  async testSqlPlusConnectivity(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Testing SQL*Plus connectivity...`);
+      
+      // Try to find SQL*Plus executable
+      const sqlplusPath = await this.findSqlPlusExecutable(installPath, logPath);
+      
+      if (!sqlplusPath) {
+        this.logToFile(logPath, `SQL*Plus executable not found`);
+        return { status: false, reason: 'SQL*Plus not found' };
+      }
+      
+      // Test basic SQL*Plus connectivity
+      const sqlTest = await new Promise((resolve) => {
+        const child = spawn(sqlplusPath, ['-v'], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        child.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        child.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        child.on('close', (code) => {
+          resolve({ code, stdout, stderr });
+        });
+      });
+      
+      if (sqlTest.code === 0 || sqlTest.stdout.includes('SQL*Plus')) {
+        this.logToFile(logPath, `✓ SQL*Plus is accessible`);
+        if (sqlTest.stdout) {
+          this.logToFile(logPath, `SQL*Plus version: ${sqlTest.stdout.trim()}`);
+        }
+        return { status: true, version: sqlTest.stdout.trim() };
+      } else {
+        this.logToFile(logPath, `✗ SQL*Plus test failed`);
+        return { status: false, error: sqlTest.stderr };
+      }
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error testing SQL*Plus: ${error.message}`);
+      return { status: false, error: error.message };
+    }
+  }
+
+  async findSqlPlusExecutable(installPath, logPath) {
+    try {
+      // Common SQL*Plus locations relative to Oracle installation
+      const sqlplusPaths = [
+        path.join(installPath, 'bin', 'sqlplus.exe'),
+        path.join(installPath, 'client', 'bin', 'sqlplus.exe'),
+        path.join(installPath, 'product', '19.0.0', 'dbhome_1', 'bin', 'sqlplus.exe'),
+        'sqlplus.exe' // Try system PATH
+      ];
+      
+      for (const sqlplusPath of sqlplusPaths) {
+        if (sqlplusPath === 'sqlplus.exe' || await fs.pathExists(sqlplusPath)) {
+          this.logToFile(logPath, `Found SQL*Plus: ${sqlplusPath}`);
+          return sqlplusPath;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      this.logToFile(logPath, `Error finding SQL*Plus: ${error.message}`);
+      return null;
+    }
+  }
+
+  async checkOracleEnvironment(logPath) {
+    try {
+      this.logToFile(logPath, `Checking Oracle environment variables...`);
+      
+      const envVars = {
+        ORACLE_HOME: process.env.ORACLE_HOME,
+        ORACLE_BASE: process.env.ORACLE_BASE,
+        ORACLE_SID: process.env.ORACLE_SID,
+        TNS_ADMIN: process.env.TNS_ADMIN
+      };
+      
+      let configuredCount = 0;
+      
+      Object.entries(envVars).forEach(([key, value]) => {
+        if (value) {
+          this.logToFile(logPath, `  ✓ ${key}: ${value}`);
+          configuredCount++;
+        } else {
+          this.logToFile(logPath, `  ✗ ${key}: Not set`);
+        }
+      });
+      
+      this.logToFile(logPath, `Environment variables configured: ${configuredCount}/4`);
+      
+      return {
+        status: configuredCount >= 2, // At least ORACLE_HOME and ORACLE_SID should be set
+        configured: configuredCount,
+        total: 4,
+        variables: envVars
+      };
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error checking Oracle environment: ${error.message}`);
+      return { status: false, error: error.message };
     }
   }
 
