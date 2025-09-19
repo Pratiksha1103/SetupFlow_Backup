@@ -1281,6 +1281,172 @@ class SetupFlowApp {
     }
   }
 
+  async openBrowserWithFallbacks(url, logPath) {
+    try {
+      // Method 1: Electron shell.openExternal (preferred)
+      this.logToFile(logPath, `Attempting to open browser using Electron shell...`);
+      try {
+        await shell.openExternal(url);
+        this.logToFile(logPath, `✓ Electron shell.openExternal succeeded`);
+        return true;
+      } catch (shellError) {
+        this.logToFile(logPath, `Electron shell failed: ${shellError.message}`);
+      }
+      
+      // Method 2: Windows start command
+      this.logToFile(logPath, `Attempting to open browser using Windows start command...`);
+      try {
+        const startResult = await new Promise((resolve) => {
+          const child = spawn('cmd', ['/c', 'start', url], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true
+          });
+          
+          child.on('close', (code) => {
+            resolve(code === 0);
+          });
+          
+          child.on('error', () => {
+            resolve(false);
+          });
+        });
+        
+        if (startResult) {
+          this.logToFile(logPath, `✓ Windows start command succeeded`);
+          return true;
+        } else {
+          this.logToFile(logPath, `Windows start command failed`);
+        }
+      } catch (startError) {
+        this.logToFile(logPath, `Windows start command error: ${startError.message}`);
+      }
+      
+      // Method 3: PowerShell Start-Process
+      this.logToFile(logPath, `Attempting to open browser using PowerShell...`);
+      try {
+        const psResult = await new Promise((resolve) => {
+          const child = spawn('powershell', [
+            '-Command', 
+            `Start-Process "${url}"`
+          ], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true
+          });
+          
+          child.on('close', (code) => {
+            resolve(code === 0);
+          });
+          
+          child.on('error', () => {
+            resolve(false);
+          });
+        });
+        
+        if (psResult) {
+          this.logToFile(logPath, `✓ PowerShell Start-Process succeeded`);
+          return true;
+        } else {
+          this.logToFile(logPath, `PowerShell Start-Process failed`);
+        }
+      } catch (psError) {
+        this.logToFile(logPath, `PowerShell error: ${psError.message}`);
+      }
+      
+      // Method 4: Try to find and launch default browser directly
+      this.logToFile(logPath, `Attempting to find and launch default browser...`);
+      try {
+        const defaultBrowser = await this.findDefaultBrowser(logPath);
+        if (defaultBrowser) {
+          const browserResult = await new Promise((resolve) => {
+            const child = spawn(defaultBrowser, [url], {
+              stdio: ['pipe', 'pipe', 'pipe'],
+              detached: true
+            });
+            
+            child.on('close', (code) => {
+              resolve(code === 0);
+            });
+            
+            child.on('error', () => {
+              resolve(false);
+            });
+            
+            // Assume success if no immediate error
+            setTimeout(() => resolve(true), 1000);
+          });
+          
+          if (browserResult) {
+            this.logToFile(logPath, `✓ Default browser launch succeeded`);
+            return true;
+          }
+        }
+      } catch (browserError) {
+        this.logToFile(logPath, `Default browser launch error: ${browserError.message}`);
+      }
+      
+      return false;
+      
+    } catch (error) {
+      this.logToFile(logPath, `Critical error in browser opening: ${error.message}`);
+      return false;
+    }
+  }
+
+  async findDefaultBrowser(logPath) {
+    try {
+      // Try to find common browsers in typical installation paths
+      const commonBrowsers = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files\\Mozilla Firefox\\firefox.exe',
+        'C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+      ];
+      
+      for (const browserPath of commonBrowsers) {
+        if (await fs.pathExists(browserPath)) {
+          this.logToFile(logPath, `Found browser: ${browserPath}`);
+          return browserPath;
+        }
+      }
+      
+      // Try to get default browser from registry
+      const regResult = await new Promise((resolve) => {
+        const child = spawn('reg', [
+          'query', 
+          'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\http\\UserChoice',
+          '/v', 'ProgId'
+        ], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stdout = '';
+        child.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        child.on('close', () => {
+          resolve(stdout);
+        });
+      });
+      
+      if (regResult.includes('ChromeHTML')) {
+        return commonBrowsers.find(p => p.includes('chrome.exe') && fs.pathExistsSync(p));
+      } else if (regResult.includes('FirefoxURL')) {
+        return commonBrowsers.find(p => p.includes('firefox.exe') && fs.pathExistsSync(p));
+      } else if (regResult.includes('MSEdgeHTM')) {
+        return commonBrowsers.find(p => p.includes('msedge.exe') && fs.pathExistsSync(p));
+      }
+      
+      return null;
+    } catch (error) {
+      this.logToFile(logPath, `Error finding default browser: ${error.message}`);
+      return null;
+    }
+  }
+
   async testAndOpenApacheBrowser(logPath) {
     try {
       this.logToFile(logPath, `Testing Apache server and opening browser...`);
@@ -1298,10 +1464,13 @@ class SetupFlowApp {
         // Open browser automatically
         this.logToFile(logPath, `Opening web browser to ${url}...`);
         
-        const { shell } = require('electron');
-        await shell.openExternal(url);
+        const browserOpened = await this.openBrowserWithFallbacks(url, logPath);
         
-        this.logToFile(logPath, `✓ Browser opened successfully`);
+        if (browserOpened) {
+          this.logToFile(logPath, `✓ Browser opened successfully`);
+        } else {
+          this.logToFile(logPath, `⚠ Could not open browser automatically. Please manually visit: ${url}`);
+        }
         this.logToFile(logPath, `📊 Server Status: HTTP 200 OK - Apache is ready!`);
         
         // Send success notification to UI
@@ -1309,7 +1478,7 @@ class SetupFlowApp {
           this.mainWindow.webContents.send('installation-progress', {
             name: 'Apache HTTP Server',
             status: 'completed',
-            message: `Server started successfully! Browser opened to ${url}`
+            message: `Server started successfully! ${browserOpened ? 'Browser opened to' : 'Please visit'} ${url}`
           });
         }
         
