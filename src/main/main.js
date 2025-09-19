@@ -1131,11 +1131,9 @@ oracle.installer.autoupdates.downloadUpdatesLoc=
       
       if (servicesStatus.status && listenerStatus.status) {
         this.logToFile(logPath, `🎉 SUCCESS: Oracle Database is running and accessible!`);
-        this.logToFile(logPath, `Connection Details:`);
-        this.logToFile(logPath, `  - Host: localhost`);
-        this.logToFile(logPath, `  - Port: 1521 (default)`);
-        this.logToFile(logPath, `  - SID: ORCL (default)`);
-        this.logToFile(logPath, `  - Service Name: ORCL`);
+        
+        // Provide comprehensive connection information
+        await this.provideOracleConnectionDetails(installPath, logPath);
         
         // Send success to UI
         if (this.mainWindow) {
@@ -1148,6 +1146,9 @@ oracle.installer.autoupdates.downloadUpdatesLoc=
       } else {
         this.logToFile(logPath, `⚠ Oracle Database installation completed but connectivity issues detected.`);
         this.logToFile(logPath, `Please check the Oracle services and configuration manually.`);
+        
+        // Still provide connection details for manual setup
+        await this.provideOracleConnectionDetails(installPath, logPath);
       }
       
       return overallStatus;
@@ -1362,6 +1363,211 @@ oracle.installer.autoupdates.downloadUpdatesLoc=
     } catch (error) {
       this.logToFile(logPath, `Error checking Oracle environment: ${error.message}`);
       return { status: false, error: error.message };
+    }
+  }
+
+  async provideOracleConnectionDetails(installPath, logPath) {
+    try {
+      this.logToFile(logPath, ``);
+      this.logToFile(logPath, `===============================================`);
+      this.logToFile(logPath, `📋 ORACLE DATABASE CONNECTION INFORMATION`);
+      this.logToFile(logPath, `===============================================`);
+      this.logToFile(logPath, ``);
+      
+      // Basic Connection Details
+      this.logToFile(logPath, `🔌 CONNECTION DETAILS:`);
+      this.logToFile(logPath, `  Host/Server: localhost`);
+      this.logToFile(logPath, `  Port: 1521`);
+      this.logToFile(logPath, `  SID: ORCL (default)`);
+      this.logToFile(logPath, `  Service Name: ORCL`);
+      this.logToFile(logPath, ``);
+      
+      // Default Oracle User Accounts
+      this.logToFile(logPath, `👤 DEFAULT USER ACCOUNTS:`);
+      this.logToFile(logPath, `  📊 System Administrator:`);
+      this.logToFile(logPath, `     Username: SYS`);
+      this.logToFile(logPath, `     Password: (set during installation - typically 'password' or 'oracle')`);
+      this.logToFile(logPath, `     Role: SYSDBA`);
+      this.logToFile(logPath, `     Usage: Database administration tasks`);
+      this.logToFile(logPath, ``);
+      this.logToFile(logPath, `  🔧 Database Administrator:`);
+      this.logToFile(logPath, `     Username: SYSTEM`);
+      this.logToFile(logPath, `     Password: (set during installation - typically 'password' or 'oracle')`);
+      this.logToFile(logPath, `     Role: DBA`);
+      this.logToFile(logPath, `     Usage: Database management and user administration`);
+      this.logToFile(logPath, ``);
+      this.logToFile(logPath, `  👨‍💻 Sample User:`);
+      this.logToFile(logPath, `     Username: HR`);
+      this.logToFile(logPath, `     Password: hr (if sample schemas installed)`);
+      this.logToFile(logPath, `     Usage: Human Resources sample schema`);
+      this.logToFile(logPath, ``);
+      this.logToFile(logPath, `  📈 Sample User:`);
+      this.logToFile(logPath, `     Username: SCOTT`);
+      this.logToFile(logPath, `     Password: tiger (if sample schemas installed)`);
+      this.logToFile(logPath, `     Usage: Classic Oracle sample schema`);
+      this.logToFile(logPath, ``);
+      
+      // Connection String Examples
+      this.logToFile(logPath, `🔗 CONNECTION STRING EXAMPLES:`);
+      this.logToFile(logPath, `  SQL*Plus:`);
+      this.logToFile(logPath, `     sqlplus SYS/password@localhost:1521/ORCL as SYSDBA`);
+      this.logToFile(logPath, `     sqlplus SYSTEM/password@localhost:1521/ORCL`);
+      this.logToFile(logPath, `     sqlplus HR/hr@localhost:1521/ORCL`);
+      this.logToFile(logPath, ``);
+      this.logToFile(logPath, `  JDBC URL:`);
+      this.logToFile(logPath, `     jdbc:oracle:thin:@localhost:1521:ORCL`);
+      this.logToFile(logPath, `     jdbc:oracle:thin:@//localhost:1521/ORCL`);
+      this.logToFile(logPath, ``);
+      this.logToFile(logPath, `  ODBC Connection:`);
+      this.logToFile(logPath, `     Server: localhost`);
+      this.logToFile(logPath, `     Port: 1521`);
+      this.logToFile(logPath, `     Database: ORCL`);
+      this.logToFile(logPath, ``);
+      
+      // Application Connection Examples
+      this.logToFile(logPath, `💻 APPLICATION CONNECTION EXAMPLES:`);
+      this.logToFile(logPath, `  Python (cx_Oracle):`);
+      this.logToFile(logPath, `     import cx_Oracle`);
+      this.logToFile(logPath, `     connection = cx_Oracle.connect("SYSTEM/password@localhost:1521/ORCL")`);
+      this.logToFile(logPath, ``);
+      this.logToFile(logPath, `  Java (JDBC):`);
+      this.logToFile(logPath, `     String url = "jdbc:oracle:thin:@localhost:1521:ORCL";`);
+      this.logToFile(logPath, `     Connection conn = DriverManager.getConnection(url, "SYSTEM", "password");`);
+      this.logToFile(logPath, ``);
+      this.logToFile(logPath, `  .NET (Oracle.ManagedDataAccess):`);
+      this.logToFile(logPath, `     string connString = "Data Source=localhost:1521/ORCL;User Id=SYSTEM;Password=password;";`);
+      this.logToFile(logPath, `     OracleConnection conn = new OracleConnection(connString);`);
+      this.logToFile(logPath, ``);
+      
+      // Try to detect actual Oracle SID and passwords
+      const actualDetails = await this.detectActualOracleDetails(installPath, logPath);
+      if (actualDetails.sid || actualDetails.passwords.length > 0) {
+        this.logToFile(logPath, `🔍 DETECTED CONFIGURATION:`);
+        if (actualDetails.sid) {
+          this.logToFile(logPath, `  Detected SID: ${actualDetails.sid}`);
+        }
+        if (actualDetails.passwords.length > 0) {
+          this.logToFile(logPath, `  Found password references in logs:`);
+          actualDetails.passwords.forEach(pwd => {
+            this.logToFile(logPath, `     - ${pwd}`);
+          });
+        }
+        this.logToFile(logPath, ``);
+      }
+      
+      // Important Notes
+      this.logToFile(logPath, `⚠️  IMPORTANT SECURITY NOTES:`);
+      this.logToFile(logPath, `  🔐 Change default passwords immediately after first login`);
+      this.logToFile(logPath, `  🛡️  Create dedicated application users instead of using SYS/SYSTEM`);
+      this.logToFile(logPath, `  🔒 Enable Oracle Network Encryption for production use`);
+      this.logToFile(logPath, `  📝 Review Oracle security best practices documentation`);
+      this.logToFile(logPath, ``);
+      
+      // Quick Start Commands
+      this.logToFile(logPath, `🚀 QUICK START COMMANDS:`);
+      this.logToFile(logPath, `  Check database status:`);
+      this.logToFile(logPath, `     lsnrctl status`);
+      this.logToFile(logPath, `     sqlplus / as sysdba`);
+      this.logToFile(logPath, `     SELECT status FROM v$instance;`);
+      this.logToFile(logPath, ``);
+      this.logToFile(logPath, `  Create new user:`);
+      this.logToFile(logPath, `     sqlplus SYSTEM/password@localhost:1521/ORCL`);
+      this.logToFile(logPath, `     CREATE USER myuser IDENTIFIED BY mypassword;`);
+      this.logToFile(logPath, `     GRANT CONNECT, RESOURCE TO myuser;`);
+      this.logToFile(logPath, ``);
+      
+      // Database Tools
+      this.logToFile(logPath, `🛠️  ORACLE DATABASE TOOLS:`);
+      this.logToFile(logPath, `  📊 SQL Developer: Oracle's free IDE for database development`);
+      this.logToFile(logPath, `  🌐 Oracle Application Express (APEX): Web-based development platform`);
+      this.logToFile(logPath, `  📱 SQL*Plus: Command-line interface included with installation`);
+      this.logToFile(logPath, `  🔧 Oracle Enterprise Manager: Web-based database administration`);
+      this.logToFile(logPath, ``);
+      
+      // Installation Paths
+      this.logToFile(logPath, `📁 INSTALLATION PATHS:`);
+      this.logToFile(logPath, `  Oracle Home: ${installPath}`);
+      this.logToFile(logPath, `  Oracle Base: ${path.join(installPath, '..', 'oracle_base')}`);
+      if (await fs.pathExists(path.join(installPath, 'bin', 'sqlplus.exe'))) {
+        this.logToFile(logPath, `  SQL*Plus: ${path.join(installPath, 'bin', 'sqlplus.exe')}`);
+      }
+      if (await fs.pathExists(path.join(installPath, 'network', 'admin', 'tnsnames.ora'))) {
+        this.logToFile(logPath, `  TNS Names: ${path.join(installPath, 'network', 'admin', 'tnsnames.ora')}`);
+      }
+      this.logToFile(logPath, ``);
+      
+      this.logToFile(logPath, `===============================================`);
+      this.logToFile(logPath, `🎉 Oracle Database is ready for connections!`);
+      this.logToFile(logPath, `===============================================`);
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error providing Oracle connection details: ${error.message}`);
+    }
+  }
+
+  async detectActualOracleDetails(installPath, logPath) {
+    try {
+      const details = {
+        sid: null,
+        passwords: [],
+        tnsEntries: []
+      };
+      
+      // Try to read tnsnames.ora for actual SID
+      const tnsnamesPath = path.join(installPath, 'network', 'admin', 'tnsnames.ora');
+      if (await fs.pathExists(tnsnamesPath)) {
+        const tnsnamesContent = await fs.readFile(tnsnamesPath, 'utf8');
+        const sidMatch = tnsnamesContent.match(/SERVICE_NAME\s*=\s*(\w+)/i);
+        if (sidMatch) {
+          details.sid = sidMatch[1];
+        }
+        
+        // Extract all TNS entries
+        const tnsMatches = tnsnamesContent.match(/^(\w+)\s*=/gm);
+        if (tnsMatches) {
+          details.tnsEntries = tnsMatches.map(match => match.replace(/\s*=$/, ''));
+        }
+      }
+      
+      // Try to find password references in Oracle installation logs
+      const logDirs = [
+        path.join(installPath, 'install'),
+        path.join(installPath, 'cfgtoollogs'),
+        path.join(installPath, '..', 'oracle_base', 'cfgtoollogs')
+      ];
+      
+      for (const logDir of logDirs) {
+        if (await fs.pathExists(logDir)) {
+          try {
+            const logFiles = await fs.readdir(logDir);
+            for (const logFile of logFiles) {
+              if (logFile.endsWith('.log') || logFile.endsWith('.out')) {
+                try {
+                  const logContent = await fs.readFile(path.join(logDir, logFile), 'utf8');
+                  
+                  // Look for password patterns (be careful not to log sensitive data)
+                  if (logContent.includes('password') && logContent.includes('SYS')) {
+                    details.passwords.push('Check installation logs for SYS password');
+                  }
+                  if (logContent.includes('password') && logContent.includes('SYSTEM')) {
+                    details.passwords.push('Check installation logs for SYSTEM password');
+                  }
+                } catch (fileError) {
+                  // Skip files we can't read
+                }
+              }
+            }
+          } catch (dirError) {
+            // Skip directories we can't read
+          }
+        }
+      }
+      
+      return details;
+      
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Could not detect Oracle details: ${error.message}`);
+      return { sid: null, passwords: [], tnsEntries: [] };
     }
   }
 
