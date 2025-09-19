@@ -398,6 +398,13 @@ class SetupFlowApp {
       const startTime = new Date();
       this.logToFile(logPath, `Starting installation of ${name} at ${startTime.toISOString()}`);
       
+      // Check if this is a ZIP extraction command
+      if (command === 'EXTRACT_ZIP' || (appData.requiresExtraction && installerPath.toLowerCase().endsWith('.zip'))) {
+        this.logToFile(logPath, `INFO: ${name} is a ZIP file that will be extracted automatically.`);
+        this.handleZipExtraction(appData, logPath, fullInstallerPath, resolve);
+        return;
+      }
+      
       // Replace placeholder with actual path
       let finalCommand = command.replace('{path}', `"${fullInstallerPath}"`);
       
@@ -508,6 +515,394 @@ class SetupFlowApp {
         });
       });
     });
+  }
+
+  async handleZipExtraction(appData, logPath, fullInstallerPath, resolve) {
+    const { name, defaultInstallPath } = appData;
+    const startTime = new Date();
+    
+    try {
+      this.logToFile(logPath, `Starting ZIP extraction of ${name} at ${startTime.toISOString()}`);
+      this.logToFile(logPath, `Source: ${fullInstallerPath}`);
+      this.logToFile(logPath, `Target: ${defaultInstallPath}`);
+      
+      // Send progress to UI
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('installation-progress', {
+          name,
+          status: 'starting',
+          message: 'Preparing extraction...'
+        });
+      }
+      
+      // Ensure target directory exists
+      await fs.ensureDir(defaultInstallPath);
+      
+      // Use PowerShell Expand-Archive for ZIP extraction
+      const extractCommand = `powershell -Command "Expand-Archive -Path '${fullInstallerPath}' -DestinationPath '${defaultInstallPath}' -Force"`;
+      this.logToFile(logPath, `Extraction command: ${extractCommand}`);
+      
+      // Send progress to UI
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('installation-progress', {
+          name,
+          status: 'extracting',
+          message: 'Extracting files...'
+        });
+      }
+      
+      const child = spawn('powershell', [
+        '-Command', 
+        `Expand-Archive -Path '${fullInstallerPath}' -DestinationPath '${defaultInstallPath}' -Force`
+      ], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      child.stdout.on('data', (data) => {
+        const output = data.toString();
+        stdout += output;
+        this.logToFile(logPath, `STDOUT: ${output}`);
+      });
+      
+      child.stderr.on('data', (data) => {
+        const output = data.toString();
+        stderr += output;
+        this.logToFile(logPath, `STDERR: ${output}`);
+      });
+      
+      child.on('close', async (code) => {
+        const endTime = new Date();
+        const duration = endTime - startTime;
+        
+        if (code === 0) {
+          this.logToFile(logPath, `✓ ZIP extraction completed successfully in ${duration}ms`);
+          
+          // Send progress to UI
+          if (this.mainWindow) {
+            this.mainWindow.webContents.send('installation-progress', {
+              name,
+              status: 'configuring',
+              message: 'Setting up environment...'
+            });
+          }
+          
+          // Verify extraction was successful
+          try {
+            const extractedItems = await fs.readdir(defaultInstallPath);
+            this.logToFile(logPath, `Extracted items: ${extractedItems.join(', ')}`);
+            
+            if (extractedItems.length > 0) {
+              this.logToFile(logPath, `✓ Extraction verified - ${extractedItems.length} items extracted`);
+              
+              // Call specific setup based on software type
+              await this.setupExtractedSoftware(name.toLowerCase(), defaultInstallPath, logPath);
+              
+              // Send final success to UI
+              if (this.mainWindow) {
+                this.mainWindow.webContents.send('installation-progress', {
+                  name,
+                  status: 'completed',
+                  message: 'Installation completed successfully!'
+                });
+              }
+              
+              resolve({
+                name,
+                success: true,
+                exitCode: 0,
+                stdout,
+                stderr,
+                duration,
+                extractedPath: defaultInstallPath
+              });
+            } else {
+              throw new Error('No files were extracted');
+            }
+          } catch (verifyError) {
+            this.logToFile(logPath, `⚠ Warning: Could not verify extraction: ${verifyError.message}`);
+            resolve({
+              name,
+              success: false,
+              error: `Extraction verification failed: ${verifyError.message}`,
+              exitCode: code
+            });
+          }
+        } else {
+          this.logToFile(logPath, `✗ ZIP extraction failed with exit code ${code}`);
+          if (stderr) {
+            this.logToFile(logPath, `Error details: ${stderr}`);
+          }
+          
+          // Send failure to UI
+          if (this.mainWindow) {
+            this.mainWindow.webContents.send('installation-progress', {
+              name,
+              status: 'failed',
+              message: `Extraction failed with exit code ${code}`
+            });
+          }
+          
+          resolve({
+            name,
+            success: false,
+            exitCode: code,
+            stdout,
+            stderr,
+            error: `ZIP extraction failed with exit code ${code}`
+          });
+        }
+      });
+      
+      child.on('error', (error) => {
+        this.logToFile(logPath, `ERROR: Failed to start extraction process: ${error.message}`);
+        
+        // Send error to UI
+        if (this.mainWindow) {
+          this.mainWindow.webContents.send('installation-progress', {
+            name,
+            status: 'failed',
+            message: `Failed to start extraction: ${error.message}`
+          });
+        }
+        
+        resolve({
+          name,
+          success: false,
+          error: `Failed to start extraction: ${error.message}`
+        });
+      });
+      
+    } catch (error) {
+      this.logToFile(logPath, `ERROR: ZIP extraction setup failed: ${error.message}`);
+      resolve({
+        name,
+        success: false,
+        error: `ZIP extraction setup failed: ${error.message}`
+      });
+    }
+  }
+
+  async setupExtractedSoftware(softwareName, installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Setting up ${softwareName} environment...`);
+      
+      if (softwareName.includes('gradle')) {
+        await this.setupGradleEnvironment(installPath, logPath);
+      } else if (softwareName.includes('tomcat') || softwareName.includes('apache-tomcat')) {
+        await this.setupTomcatEnvironment(installPath, logPath);
+      } else if (softwareName.includes('httpd') || softwareName.includes('apache http')) {
+        await this.setupApacheHttpdEnvironment(installPath, logPath);
+      } else if (softwareName.includes('3dpassport')) {
+        await this.setup3DPassportEnvironment(installPath, logPath);
+      } else if (softwareName.includes('oracle')) {
+        await this.setupOracleEnvironment(installPath, logPath);
+      } else {
+        this.logToFile(logPath, `Generic extraction completed for ${softwareName}`);
+        this.logToFile(logPath, `Files extracted to: ${installPath}`);
+      }
+      
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to setup ${softwareName} environment: ${error.message}`);
+    }
+  }
+
+  async setupGradleEnvironment(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Setting up Gradle environment...`);
+      
+      const extractedItems = await fs.readdir(installPath);
+      const gradleDir = extractedItems.find(item => item.startsWith('gradle-'));
+      
+      if (gradleDir) {
+        const gradleBinPath = path.join(installPath, gradleDir, 'bin');
+        this.logToFile(logPath, `Gradle bin directory: ${gradleBinPath}`);
+        this.logToFile(logPath, `To use Gradle, add to PATH: ${gradleBinPath}`);
+        this.logToFile(logPath, `✓ Gradle installation completed successfully!`);
+      } else {
+        this.logToFile(logPath, `Warning: Could not find gradle directory in extracted files`);
+        this.logToFile(logPath, `Available items: ${extractedItems.join(', ')}`);
+      }
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to setup Gradle environment: ${error.message}`);
+    }
+  }
+
+  async setupTomcatEnvironment(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Setting up Apache Tomcat environment...`);
+      
+      const extractedItems = await fs.readdir(installPath);
+      const tomcatDir = extractedItems.find(item => item.startsWith('apache-tomcat-'));
+      
+      if (tomcatDir) {
+        const tomcatPath = path.join(installPath, tomcatDir);
+        const tomcatBinPath = path.join(tomcatPath, 'bin');
+        const tomcatConfPath = path.join(tomcatPath, 'conf');
+        
+        this.logToFile(logPath, `Tomcat installation directory: ${tomcatPath}`);
+        this.logToFile(logPath, `Tomcat bin directory: ${tomcatBinPath}`);
+        this.logToFile(logPath, `Tomcat configuration directory: ${tomcatConfPath}`);
+        
+        // Check for important files
+        const startupBat = path.join(tomcatBinPath, 'startup.bat');
+        const serverXml = path.join(tomcatConfPath, 'server.xml');
+        
+        if (await fs.pathExists(startupBat)) {
+          this.logToFile(logPath, `✓ Startup script found: ${startupBat}`);
+        }
+        
+        if (await fs.pathExists(serverXml)) {
+          this.logToFile(logPath, `✓ Server configuration found: ${serverXml}`);
+        }
+        
+        this.logToFile(logPath, `✓ Tomcat installation completed successfully!`);
+        this.logToFile(logPath, `To start Tomcat: ${startupBat}`);
+        this.logToFile(logPath, `Default port: 8080 (configurable in conf/server.xml)`);
+        
+      } else {
+        this.logToFile(logPath, `Warning: Could not find apache-tomcat directory in extracted files`);
+        this.logToFile(logPath, `Available items: ${extractedItems.join(', ')}`);
+      }
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to setup Tomcat environment: ${error.message}`);
+    }
+  }
+
+  async setupApacheHttpdEnvironment(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Setting up Apache HTTP Server environment...`);
+      
+      const extractedItems = await fs.readdir(installPath);
+      
+      // Look for common Apache httpd directory patterns
+      let httpdDir = extractedItems.find(item => 
+        item.toLowerCase().includes('apache') || 
+        item.toLowerCase().includes('httpd') ||
+        item.toLowerCase().includes('http')
+      );
+      
+      // If no specific directory found, use the first directory or the install path itself
+      if (!httpdDir && extractedItems.length > 0) {
+        const directories = [];
+        for (const item of extractedItems) {
+          const itemPath = path.join(installPath, item);
+          const stats = await fs.stat(itemPath);
+          if (stats.isDirectory()) {
+            directories.push(item);
+          }
+        }
+        httpdDir = directories[0];
+      }
+      
+      const httpdPath = httpdDir ? path.join(installPath, httpdDir) : installPath;
+      const httpdBinPath = path.join(httpdPath, 'bin');
+      const httpdConfPath = path.join(httpdPath, 'conf');
+      
+      this.logToFile(logPath, `Apache HTTP Server installation directory: ${httpdPath}`);
+      this.logToFile(logPath, `Apache bin directory: ${httpdBinPath}`);
+      this.logToFile(logPath, `Apache configuration directory: ${httpdConfPath}`);
+      
+      // Check important files and fix configuration
+      const httpdExe = path.join(httpdBinPath, 'httpd.exe');
+      const httpdConf = path.join(httpdConfPath, 'httpd.conf');
+      
+      if (await fs.pathExists(httpdConf)) {
+        this.logToFile(logPath, `✓ Apache configuration found: ${httpdConf}`);
+        // Auto-fix ServerRoot path
+        await this.fixApacheServerRoot(httpdConf, httpdPath, logPath);
+      }
+      
+      if (await fs.pathExists(httpdExe)) {
+        this.logToFile(logPath, `✓ Apache executable found: ${httpdExe}`);
+        // Auto-start Apache HTTP Server
+        await this.autoStartApacheHttpd(httpdExe, logPath);
+      }
+      
+      this.logToFile(logPath, `✓ Apache HTTP Server installation completed successfully!`);
+      
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to setup Apache HTTP Server environment: ${error.message}`);
+    }
+  }
+
+  async setup3DPassportEnvironment(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Setting up 3DPassport environment...`);
+      this.logToFile(logPath, `3DPassport extracted to: ${installPath}`);
+      this.logToFile(logPath, `✓ 3DPassport extraction completed successfully!`);
+      this.logToFile(logPath, `Note: Please refer to 3DPassport documentation for setup instructions.`);
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to setup 3DPassport environment: ${error.message}`);
+    }
+  }
+
+  async setupOracleEnvironment(installPath, logPath) {
+    try {
+      this.logToFile(logPath, `Setting up Oracle Database environment...`);
+      this.logToFile(logPath, `Oracle Database extracted to: ${installPath}`);
+      this.logToFile(logPath, `✓ Oracle Database extraction completed successfully!`);
+      this.logToFile(logPath, `Note: Please refer to Oracle Database documentation for installation instructions.`);
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to setup Oracle Database environment: ${error.message}`);
+    }
+  }
+
+  async fixApacheServerRoot(httpdConfPath, actualRootPath, logPath) {
+    try {
+      this.logToFile(logPath, `Fixing Apache ServerRoot configuration...`);
+      
+      const configContent = await fs.readFile(httpdConfPath, 'utf8');
+      const apacheRootPath = actualRootPath.replace(/\\/g, '/');
+      
+      const updatedConfig = configContent.replace(
+        /Define SRVROOT ".*?"/,
+        `Define SRVROOT "${apacheRootPath}"`
+      );
+      
+      await fs.writeFile(httpdConfPath, updatedConfig, 'utf8');
+      this.logToFile(logPath, `✓ ServerRoot automatically fixed to: ${apacheRootPath}`);
+      
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to fix ServerRoot configuration: ${error.message}`);
+    }
+  }
+
+  async autoStartApacheHttpd(httpdExePath, logPath) {
+    try {
+      this.logToFile(logPath, `Auto-starting Apache HTTP Server...`);
+      
+      const startResult = await new Promise((resolve) => {
+        const child = spawn('powershell', [
+          '-Command', 
+          `Start-Process -FilePath '${httpdExePath}' -WindowStyle Hidden`
+        ], { 
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        child.on('close', (code) => {
+          resolve({ code });
+        });
+        
+        child.on('error', (err) => {
+          resolve({ code: -1, error: err.message });
+        });
+      });
+      
+      if (startResult.code === 0) {
+        this.logToFile(logPath, `✓ Apache HTTP Server started successfully`);
+        this.logToFile(logPath, `🌐 Website accessible at: http://localhost`);
+      } else {
+        this.logToFile(logPath, `⚠ Warning: Failed to start Apache HTTP Server automatically`);
+      }
+      
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Failed to auto-start Apache HTTP Server: ${error.message}`);
+    }
   }
 
   async logToFile(logPath, message) {
