@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Installation
   installSoftware: (installData) => ipcRenderer.invoke('install-software', installData),
+  uninstallSoftware: (uninstallData) => ipcRenderer.invoke('uninstall-software', uninstallData),
   
   // Logging
   getLogs: () => ipcRenderer.invoke('get-logs'),

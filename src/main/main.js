@@ -267,6 +267,26 @@ class SetupFlowApp {
       }
     });
 
+    // Uninstall software
+    ipcMain.handle('uninstall-software', async (event, uninstallData) => {
+      try {
+        const { software } = uninstallData;
+        const logId = uuidv4();
+        const logPath = path.join(this.appPaths.logs, `${logId}.log`);
+        
+        const results = [];
+        
+        for (const app of software) {
+          const result = await this.uninstallSingleApp(app, logPath);
+          results.push(result);
+        }
+        
+        return { success: true, results, logPath };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
     // Get logs
     ipcMain.handle('get-logs', async () => {
       try {
@@ -515,6 +535,375 @@ class SetupFlowApp {
         });
       });
     });
+  }
+
+  async uninstallSingleApp(appData, logPath) {
+    return new Promise(async (resolve) => {
+      const { name, installerPath } = appData;
+      const startTime = new Date();
+      
+      this.logToFile(logPath, `=== UNINSTALLATION START ===`);
+      this.logToFile(logPath, `Software: ${name}`);
+      this.logToFile(logPath, `Starting uninstallation of ${name} at ${startTime.toISOString()}`);
+      
+      try {
+        // Check if software is installed and get uninstall method
+        const uninstallInfo = await this.getUninstallInfo(appData, logPath);
+        
+        if (!uninstallInfo.isInstalled) {
+          this.logToFile(logPath, `INFO: ${name} is not installed or cannot be detected.`);
+          resolve({
+            name,
+            success: true,
+            notInstalled: true,
+            message: `${name} is not installed`
+          });
+          return;
+        }
+        
+        this.logToFile(logPath, `Uninstall method: ${uninstallInfo.method}`);
+        this.logToFile(logPath, `Uninstall command: ${uninstallInfo.command}`);
+        
+        // Execute uninstall command
+        const child = spawn('cmd', ['/c', uninstallInfo.command], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true,
+          env: process.env
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout.on('data', (data) => {
+          const output = data.toString();
+          stdout += output;
+          this.logToFile(logPath, `STDOUT: ${output}`);
+        });
+
+        child.stderr.on('data', (data) => {
+          const output = data.toString();
+          stderr += output;
+          this.logToFile(logPath, `STDERR: ${output}`);
+        });
+
+        child.on('close', (code) => {
+          const endTime = new Date();
+          const duration = endTime - startTime;
+          
+          this.logToFile(logPath, `Uninstallation of ${name} completed with exit code ${code} in ${duration}ms`);
+          
+          // Notify UI to refresh logs after uninstallation
+          if (this.mainWindow) {
+            this.mainWindow.webContents.send('logs-updated');
+          }
+          
+          resolve({
+            name,
+            success: code === 0,
+            exitCode: code,
+            stdout,
+            stderr,
+            duration
+          });
+        });
+
+        child.on('error', (error) => {
+          this.logToFile(logPath, `ERROR: ${error.message}`);
+          resolve({
+            name,
+            success: false,
+            error: error.message
+          });
+        });
+        
+      } catch (error) {
+        this.logToFile(logPath, `ERROR: Failed to uninstall ${name}: ${error.message}`);
+        resolve({
+          name,
+          success: false,
+          error: error.message
+        });
+      }
+    });
+  }
+
+  async getUninstallInfo(appData, logPath) {
+    const { name, installerPath } = appData;
+    
+    // Determine software type and uninstall method
+    if (installerPath.toLowerCase().endsWith('.msi')) {
+      return await this.getMsiUninstallInfo(appData, logPath);
+    } else if (installerPath.toLowerCase().endsWith('.exe')) {
+      return await this.getExeUninstallInfo(appData, logPath);
+    } else if (installerPath.toLowerCase().endsWith('.zip')) {
+      return await this.getZipUninstallInfo(appData, logPath);
+    } else {
+      return {
+        isInstalled: false,
+        method: 'unknown',
+        command: '',
+        reason: 'Unsupported installer type'
+      };
+    }
+  }
+
+  async getMsiUninstallInfo(appData, logPath) {
+    const { name, installerPath } = appData;
+    
+    try {
+      // For MSI files, we can use the product name to find and uninstall
+      // First, try to find the product using wmic
+      const productName = this.getProductNameFromInstaller(name);
+      
+      // Check if product is installed
+      const checkCommand = `wmic product where "name like '%${productName}%'" get Name,IdentifyingNumber /format:csv`;
+      
+      return new Promise((resolve) => {
+        const child = spawn('cmd', ['/c', checkCommand], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true
+        });
+
+        let stdout = '';
+        
+        child.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        child.on('close', (code) => {
+          if (code === 0 && stdout.includes(productName)) {
+            // Extract product code from output
+            const lines = stdout.split('\n');
+            let productCode = '';
+            
+            for (const line of lines) {
+              if (line.includes(productName) && line.includes('{')) {
+                const match = line.match(/\{[^}]+\}/);
+                if (match) {
+                  productCode = match[0];
+                  break;
+                }
+              }
+            }
+            
+            if (productCode) {
+              resolve({
+                isInstalled: true,
+                method: 'msi_product_code',
+                command: `msiexec /x ${productCode} /quiet /norestart`
+              });
+            } else {
+              // Fallback: try to uninstall using the original MSI file
+              const fullInstallerPath = path.join(this.appPaths.installers, installerPath);
+              resolve({
+                isInstalled: true,
+                method: 'msi_file',
+                command: `msiexec /x "${fullInstallerPath}" /quiet /norestart`
+              });
+            }
+          } else {
+            resolve({
+              isInstalled: false,
+              method: 'msi',
+              command: '',
+              reason: 'Product not found in installed programs'
+            });
+          }
+        });
+
+        child.on('error', () => {
+          resolve({
+            isInstalled: false,
+            method: 'msi',
+            command: '',
+            reason: 'Failed to check installed programs'
+          });
+        });
+      });
+      
+    } catch (error) {
+      return {
+        isInstalled: false,
+        method: 'msi',
+        command: '',
+        reason: error.message
+      };
+    }
+  }
+
+  async getExeUninstallInfo(appData, logPath) {
+    const { name, installerPath } = appData;
+    
+    try {
+      // For EXE files, check registry for uninstall information
+      const productName = this.getProductNameFromInstaller(name);
+      
+      // Check both 32-bit and 64-bit registry locations
+      const registryPaths = [
+        'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+        'HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall'
+      ];
+      
+      for (const regPath of registryPaths) {
+        const uninstallInfo = await this.checkRegistryForUninstall(regPath, productName, logPath);
+        if (uninstallInfo.isInstalled) {
+          return uninstallInfo;
+        }
+      }
+      
+      return {
+        isInstalled: false,
+        method: 'exe',
+        command: '',
+        reason: 'No uninstall information found in registry'
+      };
+      
+    } catch (error) {
+      return {
+        isInstalled: false,
+        method: 'exe',
+        command: '',
+        reason: error.message
+      };
+    }
+  }
+
+  async getZipUninstallInfo(appData, logPath) {
+    const { name, defaultInstallPath } = appData;
+    
+    try {
+      // For ZIP extractions, check if the installation directory exists
+      let installPath = defaultInstallPath;
+      
+      // Handle specific software types
+      if (name.toLowerCase().includes('gradle')) {
+        installPath = 'C:\\apps\\gradle';
+      } else if (name.toLowerCase().includes('tomcat')) {
+        installPath = 'C:\\apps\\tomcat';
+      } else if (name.toLowerCase().includes('apache') && name.toLowerCase().includes('http')) {
+        installPath = 'C:\\apps\\httpd';
+      } else if (name.toLowerCase().includes('oracle')) {
+        installPath = 'C:\\apps\\oracle';
+      }
+      
+      const exists = await fs.pathExists(installPath);
+      
+      if (exists) {
+        return {
+          isInstalled: true,
+          method: 'directory_removal',
+          command: `rmdir /s /q "${installPath}"`
+        };
+      } else {
+        return {
+          isInstalled: false,
+          method: 'directory_removal',
+          command: '',
+          reason: `Installation directory not found: ${installPath}`
+        };
+      }
+      
+    } catch (error) {
+      return {
+        isInstalled: false,
+        method: 'directory_removal',
+        command: '',
+        reason: error.message
+      };
+    }
+  }
+
+  async checkRegistryForUninstall(regPath, productName, logPath) {
+    return new Promise((resolve) => {
+      // Query registry for uninstall information
+      const command = `reg query "${regPath}" /s /f "${productName}" /t REG_SZ`;
+      
+      const child = spawn('cmd', ['/c', command], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true
+      });
+
+      let stdout = '';
+      
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code === 0 && stdout.includes('UninstallString')) {
+          // Extract uninstall string from registry output
+          const lines = stdout.split('\n');
+          let uninstallString = '';
+          
+          for (const line of lines) {
+            if (line.includes('UninstallString') && line.includes('REG_SZ')) {
+              const parts = line.split('REG_SZ');
+              if (parts.length > 1) {
+                uninstallString = parts[1].trim();
+                break;
+              }
+            }
+          }
+          
+          if (uninstallString) {
+            // Add silent flags if not present
+            if (!uninstallString.toLowerCase().includes('/s') && 
+                !uninstallString.toLowerCase().includes('/quiet')) {
+              uninstallString += ' /S /quiet';
+            }
+            
+            resolve({
+              isInstalled: true,
+              method: 'registry_uninstall',
+              command: uninstallString
+            });
+          } else {
+            resolve({
+              isInstalled: false,
+              method: 'registry',
+              command: '',
+              reason: 'UninstallString not found in registry'
+            });
+          }
+        } else {
+          resolve({
+            isInstalled: false,
+            method: 'registry',
+            command: '',
+            reason: 'Product not found in registry'
+          });
+        }
+      });
+
+      child.on('error', () => {
+        resolve({
+          isInstalled: false,
+          method: 'registry',
+          command: '',
+          reason: 'Failed to query registry'
+        });
+      });
+    });
+  }
+
+  getProductNameFromInstaller(name) {
+    // Clean up the name to match registry entries
+    let productName = name;
+    
+    // Handle specific cases
+    if (name.toLowerCase().includes('java development kit')) {
+      productName = 'Java';
+    } else if (name.toLowerCase().includes('notepad++')) {
+      productName = 'Notepad++';
+    } else if (name.toLowerCase().includes('apache tomcat')) {
+      productName = 'Apache Tomcat';
+    } else if (name.toLowerCase().includes('apache http')) {
+      productName = 'Apache HTTP Server';
+    } else if (name.toLowerCase().includes('oracle')) {
+      productName = 'Oracle';
+    }
+    
+    return productName;
   }
 
   async handleZipExtraction(appData, logPath, fullInstallerPath, resolve) {

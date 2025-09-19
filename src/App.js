@@ -344,6 +344,90 @@ const softwareDatabase = {
     }
   };
 
+  const handleUninstallation = async () => {
+    if (selectedSoftware.length === 0) return;
+
+    setIsInstalling(true);
+    setInstallationProgress({
+      current: 0,
+      total: selectedSoftware.length,
+      currentApp: selectedSoftware[0]?.name || '',
+      logs: []
+    });
+
+    try {
+      const result = await window.electronAPI.uninstallSoftware({
+        software: selectedSoftware
+      });
+
+      if (result.success) {
+        // Check individual uninstallation results
+        const actualFailures = result.results.filter(r => !r.success && !r.notInstalled);
+        const successfulUninstalls = result.results.filter(r => r.success && !r.notInstalled);
+        const notInstalled = result.results.filter(r => r.notInstalled);
+        
+        // Only show success notification for actually uninstalled software
+        if (successfulUninstalls.length > 0) {
+          setNotification({
+            open: true,
+            message: `Successfully uninstalled ${successfulUninstalls.length} software package${successfulUninstalls.length > 1 ? 's' : ''}!`,
+            severity: 'success'
+          });
+        }
+        
+        // Handle actual failures (not "not installed")
+        if (actualFailures.length > 0) {
+          const adminErrors = actualFailures.filter(f => f.error && f.error.includes('Administrator privileges required'));
+          
+          if (adminErrors.length > 0) {
+            setNotification({
+              open: true,
+              message: `Uninstallation failed: Administrator privileges required. Please restart the application using admin-start.cmd or debug-admin.bat`,
+              severity: 'error'
+            });
+          } else {
+            const errorMessages = actualFailures.map(f => `${f.name}: ${f.error || `Exit code ${f.exitCode}`}`).join(', ');
+            setNotification({
+              open: true,
+              message: `Uninstallation failed: ${errorMessages}`,
+              severity: 'error'
+            });
+          }
+        }
+
+        // Show info for software that wasn't installed
+        if (notInstalled.length > 0) {
+          setNotification({
+            open: true,
+            message: `${notInstalled.length} software package${notInstalled.length > 1 ? 's were' : ' was'} not installed and cannot be uninstalled.`,
+            severity: 'info'
+          });
+        }
+
+        // Refresh logs after uninstallation
+        const updatedLogs = await window.electronAPI.getLogs();
+        setLogs(updatedLogs);
+        setSelectedSoftware([]);
+      } else {
+        // Overall uninstallation process failed
+        setNotification({
+          open: true,
+          message: `Uninstallation process failed: ${result.error}`,
+          severity: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        open: true,
+        message: `Uninstallation failed: ${error.message}`,
+        severity: 'error'
+      });
+    } finally {
+      setIsInstalling(false);
+      setInstallationProgress(null);
+    }
+  };
+
   const handleNotificationClose = (event, reason) => {
     if (reason === 'clickaway') {
       return;
@@ -369,6 +453,7 @@ const softwareDatabase = {
     handleDeselectAll,
     handleRefreshList,        // Add this
     handleInstallation,
+    handleUninstallation,
     loadInitialData,
     setProfiles,
     setLogs

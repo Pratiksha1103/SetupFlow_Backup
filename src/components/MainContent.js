@@ -17,6 +17,7 @@ import {
 } from '@mui/material';
 import {
   PlayArrow as InstallIcon,
+  Delete as UninstallIcon,
   Info as InfoIcon,
   CheckCircle as CheckIcon,
   Folder as FolderIcon
@@ -27,6 +28,7 @@ const MainContent = () => {
   const { 
     selectedSoftware, 
     handleInstallation, 
+    handleUninstallation,
     isInstalling,
     customInstallPath,
     setCustomInstallPath,
@@ -268,7 +270,7 @@ const MainContent = () => {
                   </Paper>
                 </Box>
 
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
                   <Button
                     variant="contained"
                     size="large"
@@ -289,8 +291,30 @@ const MainContent = () => {
                     {isInstalling ? 'Installing...' : 'Install'}
                   </Button>
 
-                  <Typography variant="caption" sx={{ mt: 2, textAlign: 'center', color: 'text.secondary' }}>
-                    Installation will run silently in the background
+                  <Button
+                    variant="outlined"
+                    size="large"
+                    startIcon={<UninstallIcon />}
+                    onClick={handleUninstallation}
+                    disabled={isInstalling}
+                    sx={{ 
+                      py: 2,
+                      fontSize: '1.1rem',
+                      fontWeight: 'bold',
+                      borderColor: '#dc004e',
+                      color: '#dc004e',
+                      '&:hover': {
+                        borderColor: '#b8003e',
+                        backgroundColor: 'rgba(220, 0, 78, 0.04)'
+                      }
+                    }}
+                    fullWidth
+                  >
+                    Uninstall
+                  </Button>
+
+                  <Typography variant="caption" sx={{ mt: 1, textAlign: 'center', color: 'text.secondary' }}>
+                    Operations will run silently in the background
                   </Typography>
                 </Box>
               </>
