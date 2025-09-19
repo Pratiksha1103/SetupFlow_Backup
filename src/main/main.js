@@ -735,7 +735,12 @@ class SetupFlowApp {
     const { name, installerPath } = appData;
     
     try {
-      // For EXE files, check registry for uninstall information
+      // Special handling for Java Development Kit
+      if (name.toLowerCase().includes('java development kit')) {
+        return await this.getJavaUninstallInfo(appData, logPath);
+      }
+      
+      // For other EXE files, check registry for uninstall information
       const productName = this.getProductNameFromInstaller(name);
       
       // Check both 32-bit and 64-bit registry locations
@@ -766,6 +771,267 @@ class SetupFlowApp {
         reason: error.message
       };
     }
+  }
+
+  async getJavaUninstallInfo(appData, logPath) {
+    const { name } = appData;
+    
+    try {
+      this.logToFile(logPath, `Checking Java installation status...`);
+      
+      // Check multiple locations where Java might be installed
+      const javaLocations = [
+        'C:\\apps\\Java',  // Our custom installation path
+        'C:\\Program Files\\Java',  // Default Oracle JDK location
+        'C:\\Program Files (x86)\\Java'  // 32-bit Java location
+      ];
+      
+      // First, check if Java is installed in our custom location
+      for (const location of javaLocations) {
+        const exists = await fs.pathExists(location);
+        if (exists) {
+          this.logToFile(logPath, `Found Java installation at: ${location}`);
+          
+          // If it's in C:\apps\Java, we can remove it directly
+          if (location === 'C:\\apps\\Java') {
+            return {
+              isInstalled: true,
+              method: 'directory_removal',
+              command: `rmdir /s /q "${location}"`
+            };
+          }
+        }
+      }
+      
+      // Check registry for Java installations (standard Windows installations)
+      const registryPaths = [
+        'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+        'HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall'
+      ];
+      
+      for (const regPath of registryPaths) {
+        const uninstallInfo = await this.checkRegistryForJava(regPath, logPath);
+        if (uninstallInfo.isInstalled) {
+          return uninstallInfo;
+        }
+      }
+      
+      // Check using java -version command
+      const javaVersionCheck = await this.checkJavaVersion(logPath);
+      if (javaVersionCheck.isInstalled) {
+        // Java is installed but we couldn't find uninstall info
+        // Try to find it using wmic for MSI installations
+        const wmicResult = await this.checkJavaWithWmic(logPath);
+        if (wmicResult.isInstalled) {
+          return wmicResult;
+        }
+      }
+      
+      return {
+        isInstalled: false,
+        method: 'java',
+        command: '',
+        reason: 'Java installation not found or not detectable'
+      };
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error checking Java installation: ${error.message}`);
+      return {
+        isInstalled: false,
+        method: 'java',
+        command: '',
+        reason: error.message
+      };
+    }
+  }
+
+  async checkRegistryForJava(regPath, logPath) {
+    return new Promise((resolve) => {
+      // Search for Java entries in registry
+      const command = `reg query "${regPath}" /s /f "Java" /t REG_SZ`;
+      
+      const child = spawn('cmd', ['/c', command], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true
+      });
+
+      let stdout = '';
+      
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code === 0 && stdout.includes('UninstallString')) {
+          // Look for Java-specific entries
+          const lines = stdout.split('\n');
+          let uninstallString = '';
+          let foundJava = false;
+          
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Check if this section is about Java
+            if (line.includes('Java') && (line.includes('Development Kit') || line.includes('JDK') || line.includes('Runtime'))) {
+              foundJava = true;
+              // Look for UninstallString in the next few lines
+              for (let j = i; j < Math.min(i + 10, lines.length); j++) {
+                if (lines[j].includes('UninstallString') && lines[j].includes('REG_SZ')) {
+                  const parts = lines[j].split('REG_SZ');
+                  if (parts.length > 1) {
+                    uninstallString = parts[1].trim();
+                    break;
+                  }
+                }
+              }
+              if (uninstallString) break;
+            }
+          }
+          
+          if (foundJava && uninstallString) {
+            // Add silent flags if not present
+            if (!uninstallString.toLowerCase().includes('/s') && 
+                !uninstallString.toLowerCase().includes('/quiet')) {
+              uninstallString += ' /S /quiet';
+            }
+            
+            resolve({
+              isInstalled: true,
+              method: 'registry_java',
+              command: uninstallString
+            });
+          } else {
+            resolve({
+              isInstalled: false,
+              method: 'registry_java',
+              command: '',
+              reason: 'Java UninstallString not found in registry'
+            });
+          }
+        } else {
+          resolve({
+            isInstalled: false,
+            method: 'registry_java',
+            command: '',
+            reason: 'Java not found in registry'
+          });
+        }
+      });
+
+      child.on('error', () => {
+        resolve({
+          isInstalled: false,
+          method: 'registry_java',
+          command: '',
+          reason: 'Failed to query registry for Java'
+        });
+      });
+    });
+  }
+
+  async checkJavaVersion(logPath) {
+    return new Promise((resolve) => {
+      const child = spawn('cmd', ['/c', 'java -version'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true
+      });
+
+      let stderr = '';
+      
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code === 0 && stderr.includes('java version')) {
+          this.logToFile(logPath, `Java version check successful: ${stderr.split('\n')[0]}`);
+          resolve({
+            isInstalled: true,
+            version: stderr.split('\n')[0]
+          });
+        } else {
+          resolve({
+            isInstalled: false,
+            reason: 'java -version command failed'
+          });
+        }
+      });
+
+      child.on('error', () => {
+        resolve({
+          isInstalled: false,
+          reason: 'java command not found'
+        });
+      });
+    });
+  }
+
+  async checkJavaWithWmic(logPath) {
+    return new Promise((resolve) => {
+      // Check for Java using wmic
+      const command = `wmic product where "name like '%Java%'" get Name,IdentifyingNumber /format:csv`;
+      
+      const child = spawn('cmd', ['/c', command], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true
+      });
+
+      let stdout = '';
+      
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code === 0 && stdout.includes('Java')) {
+          // Extract product code from output
+          const lines = stdout.split('\n');
+          let productCode = '';
+          
+          for (const line of lines) {
+            if (line.includes('Java') && line.includes('{')) {
+              const match = line.match(/\{[^}]+\}/);
+              if (match) {
+                productCode = match[0];
+                break;
+              }
+            }
+          }
+          
+          if (productCode) {
+            this.logToFile(logPath, `Found Java product code: ${productCode}`);
+            resolve({
+              isInstalled: true,
+              method: 'wmic_java',
+              command: `msiexec /x ${productCode} /quiet /norestart`
+            });
+          } else {
+            resolve({
+              isInstalled: false,
+              method: 'wmic_java',
+              command: '',
+              reason: 'Java product code not found'
+            });
+          }
+        } else {
+          resolve({
+            isInstalled: false,
+            method: 'wmic_java',
+            command: '',
+            reason: 'Java not found via wmic'
+          });
+        }
+      });
+
+      child.on('error', () => {
+        resolve({
+          isInstalled: false,
+          method: 'wmic_java',
+          command: '',
+          reason: 'Failed to run wmic command'
+        });
+      });
+    });
   }
 
   async getZipUninstallInfo(appData, logPath) {

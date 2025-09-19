@@ -79,8 +79,9 @@ const softwareDatabase = {
       version: '21',
       description: 'Oracle JDK 21 for Java development',
       installerPath: 'jdk-21_windows-x64_bin.exe',
-      command: 'start /wait "" "{path}" /s INSTALL_SILENT=Enable STATIC=Disable AUTO_UPDATE=Disable WEB_JAVA=Disable',
-      category: 'Prerequisites'
+      command: 'start /wait "" "{path}" /s INSTALL_SILENT=Enable STATIC=Disable AUTO_UPDATE=Disable WEB_JAVA=Disable INSTALLDIR=C:\\apps\\Java',
+      category: 'Prerequisites',
+      defaultInstallPath: 'C:\\apps\\Java'
     },
     'gradle': {
       name: 'Gradle Build Tool',
