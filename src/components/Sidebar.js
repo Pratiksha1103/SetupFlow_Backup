@@ -16,9 +16,12 @@ import {
 } from '@mui/material';
 import {
   Apps as AppsIcon,
-  Check as SelectAllIcon, // Changed from CheckBox to Check for a simple tick
+  Check as SelectAllIcon,
   Clear as ClearIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
+  Folder as FolderIcon
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 
@@ -34,16 +37,80 @@ const Sidebar = () => {
     isRefreshing
   } = useAppContext();
 
+  // State for category expansion
+  const [expandedCategories, setExpandedCategories] = useState({
+    '3DExperience': true,
+    'Prerequisites': true,
+    'Web': true,
+    'DB': true,
+    'Other': true
+  });
+
+  const toggleCategory = (category) => {
+    setExpandedCategories(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }));
+  };
+
   const isSelected = (software) => {
     return selectedSoftware.some(item => item.name === software.name);
   };
+
+  // Group software by category
+  const groupedSoftware = availableSoftware.reduce((groups, filename) => {
+    const software = getSoftwareInfo(filename);
+    const category = software.category || 'Other';
+    
+    if (!groups[category]) {
+      groups[category] = [];
+    }
+    groups[category].push(software);
+    
+    return groups;
+  }, {});
+
+  // Category configuration with icons and colors
+  const categoryConfig = {
+    '3DExperience': {
+      icon: '🏢',
+      color: '#1976d2',
+      priority: 1
+    },
+    'Prerequisites': {
+      icon: '⚙️',
+      color: '#388e3c',
+      priority: 2
+    },
+    'Web': {
+      icon: '🌐',
+      color: '#f57c00',
+      priority: 3
+    },
+    'DB': {
+      icon: '🗄️',
+      color: '#7b1fa2',
+      priority: 4
+    },
+    'Other': {
+      icon: '📦',
+      color: '#616161',
+      priority: 5
+    }
+  };
+
+  // Sort categories by priority
+  const sortedCategories = Object.keys(groupedSoftware).sort((a, b) => {
+    const priorityA = categoryConfig[a]?.priority || 99;
+    const priorityB = categoryConfig[b]?.priority || 99;
+    return priorityA - priorityB;
+  });
 
   return (
     <Box sx={{ 
       width: 400, 
       p: 2, 
       backgroundColor: 'background.default',
-      // Remove height: 100% since we now have fixed height content
       display: 'flex',
       flexDirection: 'column'
     }}>
@@ -52,7 +119,6 @@ const Sidebar = () => {
         p: 2,
         display: 'flex',
         flexDirection: 'column',
-        // Remove flex: 1 and height: 100% since we now have fixed height content
       }}>
         <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
           <AppsIcon color="primary" />
@@ -105,97 +171,124 @@ const Sidebar = () => {
                     }
                   }}
                 >
-                  None
+                  Clear
                 </Button>
               </Tooltip>
             </ButtonGroup>
           </Box>
         )}
-        
+
         <List 
           dense 
-          sx={{
-            height: '180px', // Fixed height to show exactly 3 items (each item ~60px)
-            minHeight: '180px', // Ensure minimum height
-            maxHeight: '180px', // Ensure maximum height
-            overflowY: 'scroll', // Always show scrollbar (not just 'auto')
-            overflowX: 'hidden',
-            backgroundColor: '#fafafa',
-            border: '1px solid #e0e0e0',
-            borderRadius: '8px',
-            padding: '8px 4px',
-            // Custom grey scrollbar styles for applications list
+          sx={{ 
+            flex: 1,
+            overflow: 'auto',
             '&::-webkit-scrollbar': {
-              width: '12px', // Make scrollbar more visible
+              width: '6px',
             },
             '&::-webkit-scrollbar-track': {
-              backgroundColor: '#f8f9fa',
-              borderRadius: '6px',
-              border: '1px solid #dee2e6',
+              backgroundColor: '#f0f0f0',
+              borderRadius: '3px',
             },
             '&::-webkit-scrollbar-thumb': {
-              backgroundColor: '#6c757d', // Grey color
-              borderRadius: '6px',
-              border: '2px solid #f8f9fa',
-              boxShadow: 'inset 0 0 4px rgba(0,0,0,0.1)',
+              backgroundColor: '#c0c0c0',
+              borderRadius: '3px',
               '&:hover': {
-                backgroundColor: '#5a6268', // Darker grey on hover
-                boxShadow: 'inset 0 0 6px rgba(0,0,0,0.2)',
-              },
-              '&:active': {
-                backgroundColor: '#495057', // Darkest grey when active
-                boxShadow: 'inset 0 0 8px rgba(0,0,0,0.3)',
+                backgroundColor: '#a0a0a0',
               },
             },
-            '&::-webkit-scrollbar-corner': {
-              backgroundColor: '#f8f9fa',
-            },
-            // Firefox scrollbar
             scrollbarWidth: 'thin',
-            scrollbarColor: '#6c757d #f8f9fa',
+            scrollbarColor: '#c0c0c0 #f0f0f0',
           }}
         >
-          {availableSoftware.map((filename, index) => {
-            const software = getSoftwareInfo(filename);
-            const selected = isSelected(software);
+          {sortedCategories.map((category) => {
+            const categoryApps = groupedSoftware[category];
+            const config = categoryConfig[category] || categoryConfig['Other'];
+            const isExpanded = expandedCategories[category];
             
             return (
-              <ListItem key={index} disablePadding>
+              <Box key={category} sx={{ mb: 1 }}>
+                {/* Category Header */}
                 <ListItemButton
-                  onClick={() => handleSoftwareSelection(software)}
+                  onClick={() => toggleCategory(category)}
                   sx={{
                     borderRadius: 1,
-                    mb: 0.5,
-                    backgroundColor: 'transparent', // Removed blue background
+                    backgroundColor: `${config.color}15`,
                     '&:hover': {
-                      backgroundColor: 'action.hover' // Same hover color for all items
-                    }
+                      backgroundColor: `${config.color}25`,
+                    },
+                    mb: 0.5
                   }}
                 >
                   <ListItemIcon>
-                    <Checkbox
-                      edge="start"
-                      checked={selected}
-                      tabIndex={-1}
-                      disableRipple
-                      size="small"
-                    />
+                    <Typography sx={{ fontSize: '1.2rem' }}>
+                      {config.icon}
+                    </Typography>
                   </ListItemIcon>
                   <ListItemText
-                    primary={software.name}
-                    secondary={`v${software.version}`}
+                    primary={category}
+                    secondary={`${categoryApps.length} application${categoryApps.length !== 1 ? 's' : ''}`}
                     primaryTypographyProps={{
-                      fontSize: '0.9rem',
-                      fontWeight: selected ? 600 : 400,
-                      color: selected ? '#4caf50' : 'text.primary' // Green color when selected
+                      fontSize: '0.95rem',
+                      fontWeight: 600,
+                      color: config.color
                     }}
                     secondaryTypographyProps={{
                       fontSize: '0.75rem',
-                      color: selected ? '#4caf50' : 'text.secondary' // Green color when selected
+                      color: 'text.secondary'
                     }}
                   />
+                  {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                 </ListItemButton>
-              </ListItem>
+
+                {/* Category Applications */}
+                {isExpanded && (
+                  <Box sx={{ ml: 2, mb: 1 }}>
+                    {categoryApps.map((software, index) => {
+                      const selected = isSelected(software);
+                      
+                      return (
+                        <ListItem key={`${category}-${index}`} disablePadding>
+                          <ListItemButton
+                            onClick={() => handleSoftwareSelection(software)}
+                            sx={{
+                              borderRadius: 1,
+                              mb: 0.5,
+                              backgroundColor: 'transparent',
+                              '&:hover': {
+                                backgroundColor: 'action.hover'
+                              }
+                            }}
+                          >
+                            <ListItemIcon>
+                              <Checkbox
+                                edge="start"
+                                checked={selected}
+                                tabIndex={-1}
+                                disableRipple
+                                size="small"
+                              />
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={software.name}
+                              secondary={`v${software.version}`}
+                              primaryTypographyProps={{
+                                fontSize: '0.85rem',
+                                fontWeight: selected ? 600 : 400,
+                                color: selected ? '#4caf50' : 'text.primary'
+                              }}
+                              secondaryTypographyProps={{
+                                fontSize: '0.7rem',
+                                color: selected ? '#4caf50' : 'text.secondary'
+                              }}
+                            />
+                          </ListItemButton>
+                        </ListItem>
+                      );
+                    })}
+                  </Box>
+                )}
+              </Box>
             );
           })}
           
@@ -234,4 +327,4 @@ const Sidebar = () => {
   );
 };
 
-export default Sidebar; 
+export default Sidebar;

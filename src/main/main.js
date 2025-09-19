@@ -193,9 +193,11 @@ class SetupFlowApp {
     ipcMain.handle('get-available-software', async () => {
       try {
         const installerFiles = await fs.readdir(this.appPaths.installers);
-        return installerFiles.filter(file => 
-          file.endsWith('.msi') || file.endsWith('.exe') || file.endsWith('.pkg')
-        );
+        return installerFiles.filter(file => {
+          const isValidExtension = file.endsWith('.msi') || file.endsWith('.exe') || file.endsWith('.pkg') || file.endsWith('.zip');
+          const isNotReadme = !file.toLowerCase().includes('readme');
+          return isValidExtension && isNotReadme;
+        });
       } catch (error) {
         // Log to file instead of console
         return [];

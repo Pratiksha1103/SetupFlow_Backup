@@ -62,8 +62,8 @@ function App() {
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
 
 
-  // Software database - moved from Sidebar.js
-  const softwareDatabase = {
+  // Software database with categories
+const softwareDatabase = {
     'notepad++': {
       name: 'Notepad++',
       version: '8.8.5',
@@ -71,34 +71,76 @@ function App() {
       installerPath: 'npp.8.8.5.Installer.x64.exe',
       command: '"{path}" /S /NCRC /D={installPath}',
       defaultInstallPath: 'C:\\apps\\Notepad++',
-      supportsCustomPath: true
+      supportsCustomPath: true,
+      category: 'Prerequisites'
     },
-    'eclipse': {
-      name: 'Eclipse IDE',
-      version: '2023-09',
-      description: 'Integrated Development Environment',
-      installerPath: 'eclipse-inst-jre-win64.exe',
-      command: '"{path}" -silent -nosplash -data "{installPath}\\workspace"',
-      defaultInstallPath: 'C:\\apps',
-      supportsCustomPath: true
+    'jdk': {
+      name: 'Java Development Kit',
+      version: '21',
+      description: 'Oracle JDK 21 for Java development',
+      installerPath: 'jdk-21_windows-x64_bin.exe',
+      command: 'start /wait "" "{path}" /s INSTALL_SILENT=Enable STATIC=Disable AUTO_UPDATE=Disable WEB_JAVA=Disable',
+      category: 'Prerequisites'
     },
-    '7zip': {
-      name: '7-Zip',
-      version: '23.01',
-      description: 'File archiver with high compression ratio',
-      installerPath: '7z2301-x64.msi',
-      command: 'msiexec /i "{path}" /quiet /norestart /qn INSTALLDIR="{installPath}"',
-      defaultInstallPath: 'C:\\apps',
-      supportsCustomPath: true
+    'gradle': {
+      name: 'Gradle Build Tool',
+      version: '9.0.0',
+      description: 'Gradle Build Automation Tool',
+      installerPath: 'gradle-9.0.0-bin.zip',
+      command: 'EXTRACT_ZIP',
+      defaultInstallPath: 'C:\\apps\\gradle',
+      supportsCustomPath: true,
+      requiresExtraction: true,
+      type: 'zip',
+      category: 'Prerequisites'
     },
-    'git': {
-      name: 'Git',
-      version: '2.42.0',
-      description: 'Distributed version control system',
-      installerPath: 'Git-2.42.0.2-64-bit.exe',
-      command: '"{path}" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /DIR="{installPath}"',
-      defaultInstallPath: 'C:\\apps',
-      supportsCustomPath: true
+    '3dpassport': {
+      name: '3DPassport',
+      version: 'V6R2025x.HF4',
+      description: 'Dassault Systèmes 3DPassport Authentication',
+      installerPath: 'n/a', // Placeholder, as it's a ZIP
+      command: 'EXTRACT_ZIP',
+      defaultInstallPath: 'C:\\apps\\3DPassport',
+      supportsCustomPath: true,
+      requiresExtraction: true,
+      type: 'zip',
+      category: '3DExperience'
+    },
+    'tomcat': {
+      name: 'Apache Tomcat',
+      version: '10.1.46',
+      description: 'Apache Tomcat Web Server',
+      installerPath: 'apache-tomcat-10.1.46-windows-x64.zip',
+      command: 'EXTRACT_ZIP',
+      defaultInstallPath: 'C:\\apps\\tomcat',
+      supportsCustomPath: true,
+      requiresExtraction: true,
+      type: 'zip',
+      category: 'Prerequisites'
+    },
+    'httpd': {
+      name: 'Apache HTTP Server',
+      version: '2.4.65',
+      description: 'Apache Web Server',
+      installerPath: 'httpd-2.4.65-250724-Win64-VS17.zip',
+      command: 'EXTRACT_ZIP',
+      defaultInstallPath: 'C:\\apps\\httpd',
+      supportsCustomPath: true,
+      requiresExtraction: true,
+      type: 'zip',
+      category: 'Web'
+    },
+    'oracle': {
+      name: 'Oracle Database',
+      version: '19.3.0',
+      description: 'Oracle Database Server',
+      installerPath: 'WINDOWS.X64_193000_db_home.zip',
+      command: 'EXTRACT_ZIP',
+      defaultInstallPath: 'C:\\apps\\oracle',
+      supportsCustomPath: true,
+      requiresExtraction: true,
+      type: 'zip',
+      category: 'DB'
     }
   };
 
@@ -108,14 +150,35 @@ function App() {
       softwareDatabase[k].installerPath.toLowerCase() === filename.toLowerCase()
     );
     
-    return key ? softwareDatabase[key] : {
+    if (key) {
+      return softwareDatabase[key];
+    }
+    
+    // For files not in database, detect category based on filename patterns
+    const isZipFile = filename.toLowerCase().endsWith('.zip');
+    let category = 'Other';
+    const lowerFilename = filename.toLowerCase();
+    
+    if (lowerFilename.includes('3dpassport')) {
+      category = '3DExperience';
+    } else if (lowerFilename.includes('tomcat') || lowerFilename.includes('java') || lowerFilename.includes('gradle') || lowerFilename.includes('notepad') || lowerFilename.includes('npp')) {
+      category = 'Prerequisites';
+    } else if (lowerFilename.includes('httpd') || lowerFilename.includes('apache')) {
+      category = 'Web';
+    } else if (lowerFilename.includes('oracle') || lowerFilename.includes('db_home')) {
+      category = 'DB';
+    }
+    
+    return {
       name: filename.replace(/\.[^/.]+$/, ""),
       version: 'Unknown',
-      description: 'Software installer',
+      description: isZipFile ? 'Compressed installer package' : 'Software installer',
       installerPath: filename,
-      command: `"{path}" /S`,
-      defaultInstallPath: 'C:\\apps',
-      supportsCustomPath: true
+      command: isZipFile ? 'EXTRACT_ZIP' : `"{path}" /S`,
+      defaultInstallPath: `C:\\apps\\${filename.replace(/\.[^/.]+$/, "")}`,
+      supportsCustomPath: true,
+      requiresExtraction: isZipFile,
+      category: category
     };
   };
 
