@@ -873,35 +873,455 @@ class SetupFlowApp {
 
   async autoStartApacheHttpd(httpdExePath, logPath) {
     try {
-      this.logToFile(logPath, `Auto-starting Apache HTTP Server...`);
+      this.logToFile(logPath, `Auto-starting Apache HTTP Server with enhanced error resolution...`);
       
+      // First, try to start Apache and handle any errors
+      const startupSuccess = await this.startApacheWithErrorHandling(httpdExePath, logPath);
+      
+      if (startupSuccess) {
+        this.logToFile(logPath, `✓ Apache HTTP Server started successfully`);
+        
+        // Wait a moment for the server to fully initialize
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        // Test the server and open browser
+        await this.testAndOpenApacheBrowser(logPath);
+      } else {
+        this.logToFile(logPath, `✗ Failed to start Apache HTTP Server after error resolution attempts`);
+      }
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error: Failed to auto-start Apache HTTP Server: ${error.message}`);
+    }
+  }
+
+  async startApacheWithErrorHandling(httpdExePath, logPath, attempt = 1) {
+    const maxAttempts = 3;
+    
+    try {
+      this.logToFile(logPath, `Starting Apache HTTP Server (attempt ${attempt}/${maxAttempts})...`);
+      
+      // First, check if Apache is already running and stop it
+      await this.stopExistingApacheProcesses(logPath);
+      
+      // Try to start Apache in foreground to capture errors
       const startResult = await new Promise((resolve) => {
-        const child = spawn('powershell', [
-          '-Command', 
-          `Start-Process -FilePath '${httpdExePath}' -WindowStyle Hidden`
-        ], { 
+        const child = spawn(httpdExePath, ['-D', 'FOREGROUND'], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          cwd: path.dirname(httpdExePath)
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        let hasStarted = false;
+        
+        child.stdout.on('data', (data) => {
+          const output = data.toString();
+          stdout += output;
+          this.logToFile(logPath, `Apache STDOUT: ${output.trim()}`);
+          
+          // Check for successful startup indicators
+          if (output.includes('resuming normal operations') || 
+              output.includes('Apache') || 
+              output.includes('server started')) {
+            hasStarted = true;
+          }
+        });
+        
+        child.stderr.on('data', (data) => {
+          const output = data.toString();
+          stderr += output;
+          this.logToFile(logPath, `Apache STDERR: ${output.trim()}`);
+        });
+        
+        // Set a timeout to check if Apache started successfully
+        const startupTimeout = setTimeout(() => {
+          if (!hasStarted) {
+            this.logToFile(logPath, `Apache startup timeout, checking if server is responding...`);
+            // Don't kill the child, let it run in background
+            resolve({ code: 0, stdout, stderr, timedOut: true, childProcess: child });
+          }
+        }, 5000);
+        
+        child.on('close', (code) => {
+          clearTimeout(startupTimeout);
+          resolve({ code, stdout, stderr, hasStarted });
+        });
+        
+        child.on('error', (err) => {
+          clearTimeout(startupTimeout);
+          resolve({ code: -1, error: err.message, stdout, stderr });
+        });
+      });
+      
+      // If startup timed out but process is still running, test if server is responding
+      if (startResult.timedOut) {
+        const isResponding = await this.testApacheResponse(logPath);
+        if (isResponding) {
+          this.logToFile(logPath, `✓ Apache is running and responding (background process)`);
+          return true;
+        }
+      }
+      
+      // Check if startup was successful
+      if (startResult.code === 0 || startResult.hasStarted) {
+        // Test if the server is actually responding
+        const isResponding = await this.testApacheResponse(logPath);
+        if (isResponding) {
+          return true;
+        }
+      }
+      
+      // If we reach here, there was an error - try to resolve it
+      this.logToFile(logPath, `Apache startup failed (exit code: ${startResult.code})`);
+      if (startResult.stderr) {
+        this.logToFile(logPath, `Error details: ${startResult.stderr}`);
+      }
+      
+      // Attempt to resolve common Apache errors
+      const errorResolved = await this.resolveApacheErrors(httpdExePath, startResult.stderr, logPath);
+      
+      if (errorResolved && attempt < maxAttempts) {
+        this.logToFile(logPath, `Attempting to restart Apache after error resolution...`);
+        return await this.startApacheWithErrorHandling(httpdExePath, logPath, attempt + 1);
+      }
+      
+      return false;
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error starting Apache (attempt ${attempt}): ${error.message}`);
+      
+      if (attempt < maxAttempts) {
+        this.logToFile(logPath, `Retrying Apache startup...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return await this.startApacheWithErrorHandling(httpdExePath, logPath, attempt + 1);
+      }
+      
+      return false;
+    }
+  }
+
+  async stopExistingApacheProcesses(logPath) {
+    try {
+      this.logToFile(logPath, `Checking for existing Apache processes...`);
+      
+      const result = await new Promise((resolve) => {
+        const child = spawn('tasklist', ['/FI', 'IMAGENAME eq httpd.exe'], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stdout = '';
+        child.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        child.on('close', (code) => {
+          resolve({ code, stdout });
+        });
+      });
+      
+      if (result.stdout.includes('httpd.exe')) {
+        this.logToFile(logPath, `Found existing Apache processes, stopping them...`);
+        
+        await new Promise((resolve) => {
+          const killChild = spawn('taskkill', ['/F', '/IM', 'httpd.exe'], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true
+          });
+          
+          killChild.on('close', () => {
+            resolve();
+          });
+        });
+        
+        this.logToFile(logPath, `✓ Stopped existing Apache processes`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        this.logToFile(logPath, `No existing Apache processes found`);
+      }
+    } catch (error) {
+      this.logToFile(logPath, `Warning: Could not check/stop existing Apache processes: ${error.message}`);
+    }
+  }
+
+  async resolveApacheErrors(httpdExePath, errorOutput, logPath) {
+    try {
+      this.logToFile(logPath, `Analyzing Apache errors for automatic resolution...`);
+      
+      if (!errorOutput) {
+        this.logToFile(logPath, `No specific error output to analyze`);
+        return false;
+      }
+      
+      const lowerError = errorOutput.toLowerCase();
+      let resolved = false;
+      
+      // Error 1: Port 80 already in use
+      if (lowerError.includes('port 80') || lowerError.includes('address already in use') || lowerError.includes('bind')) {
+        this.logToFile(logPath, `Detected port 80 conflict, attempting resolution...`);
+        resolved = await this.resolvePortConflict(httpdExePath, logPath);
+      }
+      
+      // Error 2: Missing directories
+      if (lowerError.includes('no such file or directory') || lowerError.includes('cannot access')) {
+        this.logToFile(logPath, `Detected missing directory issue, attempting resolution...`);
+        resolved = await this.createMissingDirectories(httpdExePath, logPath);
+      }
+      
+      // Error 3: Permission issues
+      if (lowerError.includes('permission denied') || lowerError.includes('access denied')) {
+        this.logToFile(logPath, `Detected permission issue, attempting resolution...`);
+        resolved = await this.fixApachePermissions(httpdExePath, logPath);
+      }
+      
+      // Error 4: Configuration syntax errors
+      if (lowerError.includes('syntax error') || lowerError.includes('invalid command')) {
+        this.logToFile(logPath, `Detected configuration syntax error, attempting resolution...`);
+        resolved = await this.fixApacheConfiguration(httpdExePath, logPath);
+      }
+      
+      return resolved;
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error during automatic resolution: ${error.message}`);
+      return false;
+    }
+  }
+
+  async resolvePortConflict(httpdExePath, logPath) {
+    try {
+      this.logToFile(logPath, `Resolving port 80 conflict...`);
+      
+      // Find what's using port 80
+      const portCheck = await new Promise((resolve) => {
+        const child = spawn('netstat', ['-ano'], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stdout = '';
+        child.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        child.on('close', () => {
+          resolve(stdout);
+        });
+      });
+      
+      const port80Lines = portCheck.split('\n').filter(line => line.includes(':80 '));
+      if (port80Lines.length > 0) {
+        this.logToFile(logPath, `Port 80 usage: ${port80Lines[0].trim()}`);
+      }
+      
+      // Configure Apache to use port 8080 instead
+      const httpdConfPath = path.join(path.dirname(httpdExePath), '..', 'conf', 'httpd.conf');
+      if (await fs.pathExists(httpdConfPath)) {
+        this.logToFile(logPath, `Modifying Apache configuration to use port 8080...`);
+        
+        const configContent = await fs.readFile(httpdConfPath, 'utf8');
+        const updatedConfig = configContent
+          .replace(/Listen 80/g, 'Listen 8080')
+          .replace(/ServerName.*:80/g, 'ServerName localhost:8080');
+        
+        await fs.writeFile(httpdConfPath, updatedConfig, 'utf8');
+        this.logToFile(logPath, `✓ Apache configured to use port 8080`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      this.logToFile(logPath, `Failed to resolve port conflict: ${error.message}`);
+      return false;
+    }
+  }
+
+  async createMissingDirectories(httpdExePath, logPath) {
+    try {
+      this.logToFile(logPath, `Creating missing Apache directories...`);
+      
+      const httpdRoot = path.dirname(path.dirname(httpdExePath));
+      const requiredDirs = ['logs', 'htdocs', 'conf', 'modules'];
+      
+      for (const dir of requiredDirs) {
+        const dirPath = path.join(httpdRoot, dir);
+        if (!await fs.pathExists(dirPath)) {
+          await fs.ensureDir(dirPath);
+          this.logToFile(logPath, `✓ Created directory: ${dirPath}`);
+        }
+      }
+      
+      // Create a basic index.html if missing
+      const indexPath = path.join(httpdRoot, 'htdocs', 'index.html');
+      if (!await fs.pathExists(indexPath)) {
+        const basicHtml = '<html><body><h1>It works!</h1><p>Apache HTTP Server is running successfully.</p></body></html>';
+        await fs.writeFile(indexPath, basicHtml);
+        this.logToFile(logPath, `✓ Created basic index.html`);
+      }
+      
+      return true;
+    } catch (error) {
+      this.logToFile(logPath, `Failed to create missing directories: ${error.message}`);
+      return false;
+    }
+  }
+
+  async fixApachePermissions(httpdExePath, logPath) {
+    try {
+      this.logToFile(logPath, `Fixing Apache directory permissions...`);
+      
+      const httpdRoot = path.dirname(path.dirname(httpdExePath));
+      
+      const permissionResult = await new Promise((resolve) => {
+        const child = spawn('icacls', [httpdRoot, '/grant', 'Everyone:(OI)(CI)F', '/T'], {
           stdio: ['pipe', 'pipe', 'pipe'],
           shell: true
         });
         
         child.on('close', (code) => {
-          resolve({ code });
-        });
-        
-        child.on('error', (err) => {
-          resolve({ code: -1, error: err.message });
+          resolve(code === 0);
         });
       });
       
-      if (startResult.code === 0) {
-        this.logToFile(logPath, `✓ Apache HTTP Server started successfully`);
-        this.logToFile(logPath, `🌐 Website accessible at: http://localhost`);
+      if (permissionResult) {
+        this.logToFile(logPath, `✓ Fixed Apache directory permissions`);
+        return true;
       } else {
-        this.logToFile(logPath, `⚠ Warning: Failed to start Apache HTTP Server automatically`);
+        this.logToFile(logPath, `⚠ Could not fix permissions automatically`);
+        return false;
+      }
+    } catch (error) {
+      this.logToFile(logPath, `Failed to fix permissions: ${error.message}`);
+      return false;
+    }
+  }
+
+  async fixApacheConfiguration(httpdExePath, logPath) {
+    try {
+      this.logToFile(logPath, `Fixing Apache configuration syntax...`);
+      
+      const httpdConfPath = path.join(path.dirname(httpdExePath), '..', 'conf', 'httpd.conf');
+      if (await fs.pathExists(httpdConfPath)) {
+        // Test configuration first
+        const testResult = await new Promise((resolve) => {
+          const child = spawn(httpdExePath, ['-t'], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            cwd: path.dirname(httpdExePath)
+          });
+          
+          let stderr = '';
+          child.stderr.on('data', (data) => {
+            stderr += data.toString();
+          });
+          
+          child.on('close', (code) => {
+            resolve({ code, stderr });
+          });
+        });
+        
+        this.logToFile(logPath, `Configuration test result: ${testResult.stderr || 'No errors'}`);
+        
+        if (testResult.code === 0) {
+          this.logToFile(logPath, `✓ Apache configuration is valid`);
+          return true;
+        } else {
+          this.logToFile(logPath, `Configuration errors detected: ${testResult.stderr}`);
+          // Here you could add specific syntax fixes based on common errors
+          return false;
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      this.logToFile(logPath, `Failed to fix configuration: ${error.message}`);
+      return false;
+    }
+  }
+
+  async testApacheResponse(logPath) {
+    try {
+      this.logToFile(logPath, `Testing Apache HTTP response...`);
+      
+      // Test both port 80 and 8080
+      const ports = [80, 8080];
+      
+      for (const port of ports) {
+        const testResult = await new Promise((resolve) => {
+          const child = spawn('powershell', [
+            '-Command', 
+            `try { Invoke-WebRequest -Uri "http://localhost:${port}" -UseBasicParsing -TimeoutSec 5; Write-Output "SUCCESS" } catch { Write-Output "FAILED" }`
+          ], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true
+          });
+          
+          let stdout = '';
+          child.stdout.on('data', (data) => {
+            stdout += data.toString();
+          });
+          
+          child.on('close', () => {
+            resolve(stdout.trim());
+          });
+        });
+        
+        if (testResult.includes('SUCCESS') || testResult.includes('200')) {
+          this.logToFile(logPath, `✓ Apache is responding on port ${port}`);
+          return { responding: true, port };
+        }
+      }
+      
+      this.logToFile(logPath, `⚠ Apache is not responding on any port`);
+      return { responding: false };
+      
+    } catch (error) {
+      this.logToFile(logPath, `Error testing Apache response: ${error.message}`);
+      return { responding: false };
+    }
+  }
+
+  async testAndOpenApacheBrowser(logPath) {
+    try {
+      this.logToFile(logPath, `Testing Apache server and opening browser...`);
+      
+      // Test Apache response
+      const responseTest = await this.testApacheResponse(logPath);
+      
+      if (responseTest.responding) {
+        const port = responseTest.port || 80;
+        const url = `http://localhost${port === 80 ? '' : ':' + port}`;
+        
+        this.logToFile(logPath, `✅ SUCCESS: Apache HTTP Server is running and responding!`);
+        this.logToFile(logPath, `🌐 Website URL: ${url}`);
+        
+        // Open browser automatically
+        this.logToFile(logPath, `Opening web browser to ${url}...`);
+        
+        const { shell } = require('electron');
+        await shell.openExternal(url);
+        
+        this.logToFile(logPath, `✓ Browser opened successfully`);
+        this.logToFile(logPath, `📊 Server Status: HTTP 200 OK - Apache is ready!`);
+        
+        // Send success notification to UI
+        if (this.mainWindow) {
+          this.mainWindow.webContents.send('installation-progress', {
+            name: 'Apache HTTP Server',
+            status: 'completed',
+            message: `Server started successfully! Browser opened to ${url}`
+          });
+        }
+        
+        return true;
+      } else {
+        this.logToFile(logPath, `⚠ Apache server is not responding. Check the logs above for errors.`);
+        return false;
       }
       
     } catch (error) {
-      this.logToFile(logPath, `Warning: Failed to auto-start Apache HTTP Server: ${error.message}`);
+      this.logToFile(logPath, `Error testing and opening browser: ${error.message}`);
+      return false;
     }
   }
 
