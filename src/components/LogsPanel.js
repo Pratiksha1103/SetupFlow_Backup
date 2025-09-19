@@ -11,7 +11,14 @@ import {
   Collapse,
   IconButton,
   Paper,
-  Divider
+  Divider,
+  TextField,
+  InputAdornment,
+  Button,
+  Tooltip,
+  Badge,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material';
 import {
   ExpandLess,
@@ -19,17 +26,27 @@ import {
   CheckCircle as SuccessIcon,
   Error as ErrorIcon,
   Description as LogIcon,
-  DragIndicator as DragIcon
+  DragIndicator as DragIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon,
+  Refresh as RefreshIcon,
+  Visibility as ViewIcon,
+  Delete as DeleteIcon,
+  SelectAll as SelectAllIcon
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 
 const LogsPanel = () => {
-  const { logs } = useAppContext();
+  const { logs, loadInitialData } = useAppContext();
   const [expanded, setExpanded] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
   const [logContent, setLogContent] = useState('');
-  const [panelHeight, setPanelHeight] = useState(80); // Increased default height
+  const [panelHeight, setPanelHeight] = useState(200); // Larger default height for better visibility
   const [isDragging, setIsDragging] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredLogs, setFilteredLogs] = useState([]);
+  const [selectedLogs, setSelectedLogs] = useState(new Set());
+  const [selectAll, setSelectAll] = useState(false);
   const dragRef = useRef(null);
   const startY = useRef(0);
   const startHeight = useRef(0);
@@ -47,7 +64,7 @@ const LogsPanel = () => {
   const handleMouseMove = (e) => {
     if (!isDragging) return;
     const deltaY = startY.current - e.clientY; // Inverted for upward drag
-    const newHeight = Math.max(60, Math.min(400, startHeight.current + deltaY));
+    const newHeight = Math.max(100, Math.min(800, startHeight.current + deltaY));
     setPanelHeight(newHeight);
   };
 
@@ -65,10 +82,104 @@ const LogsPanel = () => {
     };
   }, []);
 
+  // Filter logs based on search term
+  useEffect(() => {
+    if (!searchTerm) {
+      setFilteredLogs(logs);
+    } else {
+      const filtered = logs.filter(log => 
+        log.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        formatDate(log.createdAt).toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredLogs(filtered);
+    }
+  }, [logs, searchTerm]);
+
+  // Listen for real-time log updates
+  useEffect(() => {
+    let cleanup;
+    
+    if (window.electronAPI && typeof window.electronAPI.onLogsUpdated === 'function') {
+      cleanup = window.electronAPI.onLogsUpdated(() => {
+        // Refresh logs when installation completes
+        if (loadInitialData) {
+          loadInitialData();
+        }
+      });
+    }
+    
+    return () => {
+      if (cleanup && typeof cleanup === 'function') {
+        cleanup();
+      }
+    };
+  }, [loadInitialData]);
+
+  // Handle select all functionality
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedLogs(new Set());
+      setSelectAll(false);
+    } else {
+      const allLogIds = new Set(filteredLogs.map(log => log.id));
+      setSelectedLogs(allLogIds);
+      setSelectAll(true);
+    }
+  };
+
+  // Handle individual log selection
+  const handleLogSelection = (logId, event) => {
+    event.stopPropagation();
+    const newSelectedLogs = new Set(selectedLogs);
+    
+    if (newSelectedLogs.has(logId)) {
+      newSelectedLogs.delete(logId);
+    } else {
+      newSelectedLogs.add(logId);
+    }
+    
+    setSelectedLogs(newSelectedLogs);
+    setSelectAll(newSelectedLogs.size === filteredLogs.length);
+  };
+
+  // Handle delete selected logs
+  const handleDeleteSelected = async () => {
+    if (selectedLogs.size === 0) return;
+    
+    const confirmed = window.confirm(`Are you sure you want to delete ${selectedLogs.size} log file${selectedLogs.size > 1 ? 's' : ''}?`);
+    if (!confirmed) return;
+
+    try {
+      const logIdsArray = Array.from(selectedLogs);
+      const result = await window.electronAPI.deleteLogs(logIdsArray);
+      
+      if (result.success) {
+        // Clear selections
+        setSelectedLogs(new Set());
+        setSelectAll(false);
+        
+        // Clear selected log if it was deleted
+        if (selectedLog && selectedLogs.has(selectedLog.id)) {
+          setSelectedLog(null);
+          setLogContent('');
+        }
+        
+        // Refresh the logs list without reloading the page
+        loadInitialData();
+        
+        alert(result.message);
+      } else {
+        alert(`Failed to delete logs: ${result.error}`);
+      }
+    } catch (error) {
+      alert('Failed to delete logs. Please try again.');
+    }
+  };
+
   const handleExpandClick = () => {
     setExpanded(!expanded);
     if (!expanded) {
-      setPanelHeight(Math.max(panelHeight, 200)); // Ensure good height when expanding
+      setPanelHeight(Math.max(panelHeight, 400)); // Ensure good height when expanding
     }
   };
 
@@ -157,98 +268,242 @@ const LogsPanel = () => {
       }}>
         <Box 
           sx={{ 
-            p: 2, 
+            p: 3, 
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'space-between',
             cursor: 'pointer',
-            backgroundColor: 'grey.50', // Light background to make it more visible
-            borderBottom: '1px solid #e0e0e0'
+            background: 'linear-gradient(135deg, #e91e63 0%, #f06292 100%)',
+            color: 'white',
+            borderBottom: '1px solid #e0e0e0',
+            '&:hover': {
+              background: 'linear-gradient(135deg, #d81b60 0%, #ec407a 100%)',
+            }
           }}
           onClick={handleExpandClick}
         >
-          <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1, fontWeight: 600 }}>
-            <LogIcon color="primary" />
-            Success / Failure Logs
+          <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 2, fontWeight: 700 }}>
+            <LogIcon sx={{ fontSize: 28 }} />
+            Installation Logs
             {logs.length > 0 && (
-              <Chip 
-                label={logs.length} 
-                size="small" 
-                color="primary" 
-                sx={{ ml: 1 }}
-              />
+              <Badge 
+                badgeContent={logs.length} 
+                color="error"
+                sx={{
+                  '& .MuiBadge-badge': {
+                    backgroundColor: '#ff4444',
+                    color: 'white',
+                    fontWeight: 'bold'
+                  }
+                }}
+              >
+                <Box />
+              </Badge>
             )}
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              {expanded ? 'Click to collapse' : 'Click to expand • Drag top edge to resize'}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Typography variant="body2" sx={{ opacity: 0.9 }}>
+              {expanded ? 'Click to collapse' : 'Click to expand • Drag to resize'}
             </Typography>
-            {expanded ? <ExpandLess /> : <ExpandMore />}
+            <Box sx={{ 
+              backgroundColor: 'rgba(255,255,255,0.2)', 
+              borderRadius: '50%', 
+              p: 0.5,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {expanded ? <ExpandLess sx={{ fontSize: 24 }} /> : <ExpandMore sx={{ fontSize: 24 }} />}
+            </Box>
           </Box>
         </Box>
 
         <Collapse in={expanded} timeout="auto" unmountOnExit>
-          <Divider />
-          <Box sx={{ display: 'flex', height: 220 }}>
+          {/* Search and Controls Bar */}
+          <Box sx={{ 
+            p: 2, 
+            backgroundColor: '#f8f9fa', 
+            borderBottom: '1px solid #e0e0e0',
+            display: 'flex',
+            gap: 2,
+            alignItems: 'center'
+          }}>
+            <TextField
+              size="small"
+              placeholder="Search logs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onClick={(e) => e.stopPropagation()} // Prevent collapse when clicking search field
+              sx={{ 
+                flexGrow: 1,
+                '& .MuiOutlinedInput-root': {
+                  backgroundColor: 'white'
+                }
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon color="action" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchTerm && (
+                  <InputAdornment position="end">
+                    <IconButton 
+                      size="small" 
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevent collapse when clearing search
+                        setSearchTerm('');
+                      }}
+                    >
+                      <ClearIcon />
+                    </IconButton>
+                  </InputAdornment>
+                )
+              }}
+            />
+            
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={selectAll}
+                  onChange={handleSelectAll}
+                  size="small"
+                />
+              }
+              label="Select All"
+              onClick={(e) => e.stopPropagation()} // Prevent collapse when clicking checkbox
+              sx={{ mr: 1 }}
+            />
+            
+            <Tooltip title={`Delete ${selectedLogs.size} selected log${selectedLogs.size !== 1 ? 's' : ''}`}>
+              <Button
+                variant="outlined"
+                size="small"
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent event bubbling to parent
+                  handleDeleteSelected();
+                }}
+                disabled={selectedLogs.size === 0}
+              >
+                Delete ({selectedLogs.size})
+              </Button>
+            </Tooltip>
+            
+            <Tooltip title="Refresh logs">
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<RefreshIcon />}
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent event bubbling to parent
+                  loadInitialData(); // Refresh logs without collapsing panel
+                }}
+              >
+                Refresh
+              </Button>
+            </Tooltip>
+          </Box>
+          
+          <Box sx={{ display: 'flex', height: 'calc(100vh - 300px)', minHeight: 400 }}>
             {/* Logs List */}
-            <Box sx={{ width: '40%', borderRight: '1px solid', borderColor: 'divider' }}>
-              <List dense sx={{ 
+            <Box sx={{ width: '45%', borderRight: '1px solid', borderColor: 'divider', backgroundColor: '#fafafa' }}>
+              <List sx={{ 
                 height: '100%', 
                 overflow: 'auto',
-                // Custom grey scrollbar styles for logs list
+                p: 1,
+                // Custom scrollbar styles
                 '&::-webkit-scrollbar': {
-                  width: '10px',
+                  width: '8px',
                 },
                 '&::-webkit-scrollbar-track': {
-                  backgroundColor: '#f8f9fa',
-                  borderRadius: '5px',
-                  border: '1px solid #dee2e6',
+                  backgroundColor: '#f1f3f4',
+                  borderRadius: '4px',
                 },
                 '&::-webkit-scrollbar-thumb': {
-                  backgroundColor: '#6c757d', // Grey color
-                  borderRadius: '5px',
-                  border: '1px solid #f8f9fa',
+                  backgroundColor: '#dadce0',
+                  borderRadius: '4px',
                   '&:hover': {
-                    backgroundColor: '#5a6268', // Darker grey on hover
-                  },
-                  '&:active': {
-                    backgroundColor: '#495057', // Darkest grey when active
+                    backgroundColor: '#bdc1c6',
                   },
                 },
               }}>
-                {logs.length === 0 ? (
+                {filteredLogs.length === 0 ? (
                   <ListItem>
                     <ListItemText
-                      primary="No logs available"
-                      secondary="Installation logs will appear here"
-                      primaryTypographyProps={{ fontSize: '0.9rem' }}
-                      secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                      primary={searchTerm ? "No matching logs found" : "No logs available"}
+                      secondary={searchTerm ? "Try adjusting your search terms" : "Installation logs will appear here"}
+                      primaryTypographyProps={{ fontSize: '1rem', textAlign: 'center' }}
+                      secondaryTypographyProps={{ fontSize: '0.85rem', textAlign: 'center' }}
                     />
                   </ListItem>
                 ) : (
-                  logs.map((log) => (
-                    <ListItem key={log.id} disablePadding>
+                  filteredLogs.map((log) => (
+                    <ListItem key={log.id} disablePadding sx={{ mb: 1 }}>
                       <ListItemButton
                         onClick={() => handleLogClick(log)}
                         selected={selectedLog?.id === log.id}
-                        sx={{ py: 1 }}
+                        sx={{ 
+                          py: 1.5,
+                          px: 2,
+                          borderRadius: 2,
+                          mx: 0.5,
+                          backgroundColor: selectedLog?.id === log.id ? '#fce4ec' : 'white',
+                          border: '1px solid',
+                          borderColor: selectedLogs.has(log.id) ? '#e91e63' : 
+                                     selectedLog?.id === log.id ? '#e91e63' : '#e0e0e0',
+                          '&:hover': {
+                            backgroundColor: selectedLog?.id === log.id ? '#fce4ec' : '#f5f5f5',
+                            borderColor: '#e91e63',
+                            transform: 'translateY(-1px)',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                          },
+                          transition: 'all 0.2s ease'
+                        }}
                       >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
+                          <Checkbox
+                            checked={selectedLogs.has(log.id)}
+                            onChange={(e) => handleLogSelection(log.id, e)}
+                            size="small"
+                            sx={{
+                              color: '#e91e63',
+                              '&.Mui-checked': {
+                                color: '#e91e63',
+                              },
+                            }}
+                          />
+                          <ViewIcon 
+                            sx={{ 
+                              fontSize: 20,
+                              color: selectedLog?.id === log.id ? '#e91e63' : '#666'
+                            }}
+                          />
+                        </Box>
                         <ListItemText
                           primary={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                                {log.filename}
-                              </Typography>
-                            </Box>
+                            <Typography 
+                              variant="subtitle2" 
+                              sx={{ 
+                                fontWeight: 600,
+                                color: selectedLog?.id === log.id ? '#c2185b' : 'text.primary'
+                              }}
+                            >
+                              {log.filename.replace('.log', '')}
+                            </Typography>
                           }
                           secondary={
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
                               <Typography variant="caption" color="text.secondary">
                                 {formatDate(log.createdAt)}
                               </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {formatFileSize(log.size)}
-                              </Typography>
+                              <Chip 
+                                label={formatFileSize(log.size)} 
+                                size="small" 
+                                variant="outlined"
+                                sx={{ height: 20, fontSize: '0.7rem' }}
+                              />
                             </Box>
                           }
                         />
@@ -262,70 +517,103 @@ const LogsPanel = () => {
             {/* Log Content */}
             <Box sx={{ 
               flex: 1, 
-              p: 2, 
-              backgroundColor: 'grey.900', 
-              color: 'white',
-              overflow: 'auto',
-              // Custom grey scrollbar styles for log content
-              '&::-webkit-scrollbar': {
-                width: '10px',
-                height: '10px',
-              },
-              '&::-webkit-scrollbar-track': {
-                backgroundColor: '#2d3748',
-                borderRadius: '5px',
-              },
-              '&::-webkit-scrollbar-thumb': {
-                backgroundColor: '#6c757d', // Grey color
-                borderRadius: '5px',
-                border: '1px solid #2d3748',
-                '&:hover': {
-                  backgroundColor: '#5a6268', // Darker grey on hover
-                },
-                '&:active': {
-                  backgroundColor: '#495057', // Darkest grey when active
-                },
-              },
-              '&::-webkit-scrollbar-corner': {
-                backgroundColor: '#2d3748',
-              },
+              display: 'flex',
+              flexDirection: 'column',
+              backgroundColor: '#f8f9fa',
+              overflow: 'hidden'
             }}>
-              {selectedLog ? (
-                <Paper 
-                  sx={{ 
-                    p: 2, 
-                    height: '100%', 
-                    backgroundColor: 'grey.900',
-                    color: 'common.white',
-                    overflow: 'auto'
-                  }}
-                >
+              {/* Log Content Header */}
+              {selectedLog && (
+                <Box sx={{ 
+                  p: 2, 
+                  backgroundColor: '#fce4ec', 
+                  borderBottom: '1px solid #f8bbd9'
+                }}>
+                  <Typography variant="subtitle1" sx={{ color: '#c2185b', fontWeight: 600 }}>
+                    {selectedLog.filename.replace('.log', '')}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#666' }}>
+                    {formatDate(selectedLog.createdAt)} • {formatFileSize(selectedLog.size)}
+                  </Typography>
+                </Box>
+              )}
+              
+                            {/* Log Content Body */}
+              <Box sx={{ 
+                flex: 1,
+                overflow: 'scroll', // Always show scrollbar
+                backgroundColor: '#1a1a1a',
+                // Custom pink scrollbar styles to match logo
+                '&::-webkit-scrollbar': {
+                  width: '14px', // Wider scrollbar for better visibility
+                  height: '14px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  backgroundColor: '#2d2d2d',
+                  borderRadius: '7px',
+                  border: '1px solid #404040',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  backgroundColor: '#e91e63', // Pink color to match logo
+                  borderRadius: '7px',
+                  border: '2px solid #2d2d2d',
+                  boxShadow: 'inset 0 0 4px rgba(255,255,255,0.2)',
+                  '&:hover': {
+                    backgroundColor: '#f06292', // Lighter pink on hover
+                    boxShadow: 'inset 0 0 6px rgba(255,255,255,0.3)',
+                  },
+                  '&:active': {
+                    backgroundColor: '#ff4081', // Bright pink when active
+                    boxShadow: 'inset 0 0 8px rgba(255,255,255,0.4)',
+                  },
+                },
+                '&::-webkit-scrollbar-corner': {
+                  backgroundColor: '#2d2d2d',
+                },
+                // Firefox scrollbar with pink theme
+                scrollbarWidth: 'auto',
+                scrollbarColor: '#e91e63 #2d2d2d',
+              }}>
+                {selectedLog ? (
                   <Typography 
                     variant="body2" 
                     component="pre" 
                     sx={{ 
-                      fontFamily: 'monospace',
-                      fontSize: '0.75rem',
+                      fontFamily: '"Courier New", "Consolas", "Monaco", monospace',
+                      fontSize: '0.85rem',
+                      lineHeight: 1.6,
                       whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word'
+                      wordBreak: 'break-word',
+                      color: '#e0e0e0',
+                      backgroundColor: '#1a1a1a',
+                      margin: 0,
+                      padding: '20px',
+                      minHeight: '100%',
+                      display: 'block'
                     }}
                   >
                     {logContent || 'Loading log content...'}
                   </Typography>
-                </Paper>
-              ) : (
-                <Box sx={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  height: '100%',
-                  textAlign: 'center'
-                }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Select a log file to view its contents
-                  </Typography>
-                </Box>
-              )}
+                ) : (
+                  <Box sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    height: '100%',
+                    textAlign: 'center',
+                    color: '#666'
+                  }}>
+                    <LogIcon sx={{ fontSize: 64, mb: 2, color: '#bbb' }} />
+                    <Typography variant="h6" sx={{ color: '#666', mb: 1, fontWeight: 500 }}>
+                      No Log Selected
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#999' }}>
+                      Click on a log file to view its contents
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
             </Box>
           </Box>
         </Collapse>

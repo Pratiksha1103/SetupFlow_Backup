@@ -58,7 +58,7 @@ const Sidebar = () => {
           <AppsIcon color="primary" />
           Applications
         </Typography>
-
+        
         {/* Status Display */}
         {availableSoftware.length > 0 && (
           <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>

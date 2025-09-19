@@ -5,6 +5,7 @@ import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 import LogsPanel from './components/LogsPanel';
+
 import { AppProvider } from './context/AppContext';
 import './App.css';
 
@@ -12,12 +13,12 @@ const theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#1976d2',
-      light: '#42a5f5',
-      dark: '#1565c0',
+      main: '#e91e63',
+      light: '#f06292',
+      dark: '#c2185b',
     },
     secondary: {
-      main: '#dc004e',
+      main: '#ff4081',
     },
     background: {
       default: '#f5f5f5',
@@ -59,6 +60,7 @@ function App() {
   const [installationProgress, setInstallationProgress] = useState(null);
   const [customInstallPath, setCustomInstallPath] = useState('C:\\apps');
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
+
 
   // Software database - moved from Sidebar.js
   const softwareDatabase = {
@@ -119,6 +121,34 @@ function App() {
 
   useEffect(() => {
     loadInitialData();
+    
+    // Set up event listener for already installed software notifications
+    let cleanup;
+    
+    // Wait for electronAPI to be available
+    const setupEventListener = () => {
+      if (window.electronAPI && typeof window.electronAPI.onSoftwareAlreadyInstalled === 'function') {
+        cleanup = window.electronAPI.onSoftwareAlreadyInstalled((event, data) => {
+          setNotification({
+            open: true,
+            message: `${data.name} already exists in the apps folder`,
+            severity: 'warning'
+          });
+        });
+      } else {
+        // Retry after a short delay if electronAPI is not ready
+        setTimeout(setupEventListener, 100);
+      }
+    };
+    
+    setupEventListener();
+    
+    // Cleanup event listeners on unmount
+    return () => {
+      if (cleanup && typeof cleanup === 'function') {
+        cleanup();
+      }
+    };
   }, []);
 
   const loadInitialData = async () => {
@@ -193,20 +223,22 @@ function App() {
 
       if (result.success) {
         // Check individual installation results
-        const failedInstalls = result.results.filter(r => !r.success);
-        const successfulInstalls = result.results.filter(r => r.success);
+        const actualFailures = result.results.filter(r => !r.success && !r.alreadyInstalled);
+        const successfulInstalls = result.results.filter(r => r.success && !r.alreadyInstalled);
+        const alreadyInstalled = result.results.filter(r => r.alreadyInstalled);
         
-        if (failedInstalls.length === 0) {
-          // All installations successful
+        // Only show success notification for actually installed software
+        if (successfulInstalls.length > 0) {
           setNotification({
             open: true,
             message: `Successfully installed ${successfulInstalls.length} software package${successfulInstalls.length > 1 ? 's' : ''}!`,
             severity: 'success'
           });
-        } else if (successfulInstalls.length === 0) {
-          // All installations failed
-          const adminErrors = failedInstalls.filter(f => f.error && f.error.includes('Administrator privileges required'));
-          const otherErrors = failedInstalls.filter(f => !f.error || !f.error.includes('Administrator privileges required'));
+        }
+        
+        // Handle actual failures (not already installed)
+        if (actualFailures.length > 0) {
+          const adminErrors = actualFailures.filter(f => f.error && f.error.includes('Administrator privileges required'));
           
           if (adminErrors.length > 0) {
             setNotification({
@@ -215,21 +247,13 @@ function App() {
               severity: 'error'
             });
           } else {
-            const errorMessages = failedInstalls.map(f => `${f.name}: ${f.error || `Exit code ${f.exitCode}`}`).join(', ');
+            const errorMessages = actualFailures.map(f => `${f.name}: ${f.error || `Exit code ${f.exitCode}`}`).join(', ');
             setNotification({
               open: true,
-              message: `Installation failed for all software. Errors: ${errorMessages}`,
+              message: `Installation failed: ${errorMessages}`,
               severity: 'error'
             });
           }
-        } else {
-          // Mixed results
-          const errorMessages = failedInstalls.map(f => `${f.name}: ${f.error || `Exit code ${f.exitCode}`}`).join(', ');
-          setNotification({
-            open: true,
-            message: `${successfulInstalls.length} installed successfully, ${failedInstalls.length} failed. Errors: ${errorMessages}`,
-            severity: 'warning'
-          });
         }
 
         // Refresh logs after installation
@@ -354,6 +378,8 @@ function App() {
             {notification.message}
           </Alert>
         </Snackbar>
+
+
       </AppProvider>
     </ThemeProvider>
   );

@@ -50,6 +50,41 @@ class SetupFlowApp {
     });
   }
 
+  // Check if software is already installed in our apps folder only
+  async checkIfAlreadyInstalled(appData) {
+    const { name, defaultInstallPath } = appData;
+    
+    try {
+      // Only check our specific apps folder installation path
+      const appsPath = defaultInstallPath || path.join('C:\\apps', name);
+      
+      // Check if the software folder exists in our apps directory
+      if (await fs.pathExists(appsPath)) {
+        // Look for executable files that might indicate installation
+        const files = await fs.readdir(appsPath);
+        const exeFiles = files.filter(file => 
+          file.toLowerCase().endsWith('.exe')
+        );
+        
+        if (exeFiles.length > 0) {
+          return {
+            isInstalled: true,
+            location: appsPath,
+            version: 'Unknown',
+            method: 'apps_folder'
+          };
+        }
+      }
+      
+      return { isInstalled: false };
+      
+    } catch (error) {
+      return { isInstalled: false, error: error.message };
+    }
+  }
+
+
+
   initializePaths() {
     const userDataPath = app.getPath('userData');
     return {
@@ -143,7 +178,7 @@ class SetupFlowApp {
         if (this.mainWindow.webContents.isDevToolsOpened()) {
           this.mainWindow.webContents.closeDevTools();
         } else {
-          this.mainWindow.webContents.openDevTools();
+        this.mainWindow.webContents.openDevTools();
         }
       }
     });
@@ -224,10 +259,10 @@ class SetupFlowApp {
         }
         
         return { success: true, results, logPath };
-          } catch (error) {
+      } catch (error) {
       // Log to file instead of console
-      return { success: false, error: error.message };
-    }
+        return { success: false, error: error.message };
+      }
     });
 
     // Get logs
@@ -267,6 +302,37 @@ class SetupFlowApp {
         return { success: false, error: error.message };
       }
     });
+
+    // Delete log files
+    ipcMain.handle('delete-logs', async (event, logIds) => {
+      try {
+        const deletedLogs = [];
+        const failedLogs = [];
+
+        for (const logId of logIds) {
+          try {
+            const logPath = path.join(this.appPaths.logs, `${logId}.log`);
+            if (await fs.pathExists(logPath)) {
+              await fs.remove(logPath);
+              deletedLogs.push(logId);
+            } else {
+              failedLogs.push({ logId, error: 'File not found' });
+            }
+          } catch (error) {
+            failedLogs.push({ logId, error: error.message });
+          }
+        }
+
+        return { 
+          success: true, 
+          deletedLogs, 
+          failedLogs,
+          message: `Successfully deleted ${deletedLogs.length} log file${deletedLogs.length !== 1 ? 's' : ''}`
+        };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
   }
 
   async installSingleApp(appData, logPath) {
@@ -285,8 +351,39 @@ class SetupFlowApp {
         resolve({ name, success: false, error });
         return;
       }
-      
+
       this.logToFile(logPath, `✓ Administrator privileges confirmed`);
+      
+      // Check if software is already installed
+      this.logToFile(logPath, `Checking if ${name} is already installed...`);
+      const installCheck = await this.checkIfAlreadyInstalled(appData);
+      
+      if (installCheck.isInstalled) {
+        const message = `${name} is already installed at: ${installCheck.location}${installCheck.version ? ` (Version: ${installCheck.version})` : ''}`;
+        this.logToFile(logPath, `INFO: ${message}`);
+        
+        // Send notification to UI about already installed software
+        if (this.mainWindow) {
+          this.mainWindow.webContents.send('software-already-installed', {
+            name,
+            location: installCheck.location,
+            version: installCheck.version,
+            method: installCheck.method
+          });
+        }
+        
+        resolve({
+          name,
+          success: false, 
+          alreadyInstalled: true,
+          location: installCheck.location,
+          version: installCheck.version,
+          message: `${name} already exists in ${installCheck.location}`
+        });
+        return;
+      }
+      
+      this.logToFile(logPath, `✓ ${name} is not currently installed, proceeding with installation`);
       
       // Security: Validate installer path
       if (!fs.existsSync(fullInstallerPath)) {
@@ -384,6 +481,11 @@ class SetupFlowApp {
         const duration = endTime - startTime;
         
         this.logToFile(logPath, `Installation of ${name} completed with exit code ${code} in ${duration}ms`);
+        
+        // Notify UI to refresh logs after installation
+        if (this.mainWindow) {
+          this.mainWindow.webContents.send('logs-updated');
+        }
         
         resolve({
           name,
