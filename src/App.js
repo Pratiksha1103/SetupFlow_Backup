@@ -95,13 +95,25 @@ const softwareDatabase = {
       type: 'zip',
       category: 'Prerequisites'
     },
-    '3dpassport': {
-      name: '3DPassport',
-      version: 'V6R2025x.HF4',
-      description: 'Dassault Systèmes 3DPassport Authentication',
-      installerPath: 'n/a', // Placeholder, as it's a ZIP
+    '3dpassport-ga': {
+      name: '3DPassport_GA',
+      version: 'GA',
+      description: 'Dassault Systèmes 3DPassport Authentication (General Availability)',
+      installerPath: '3DPassport.Windows64.zip',
       command: 'EXTRACT_ZIP',
-      defaultInstallPath: 'C:\\apps\\3DPassport',
+      defaultInstallPath: 'C:\\apps\\3DPassport_GA',
+      supportsCustomPath: true,
+      requiresExtraction: true,
+      type: 'zip',
+      category: '3DExperience'
+    },
+    '3dpassport-fp': {
+      name: '3DPassport_FP',
+      version: 'V6R2025x.HF4',
+      description: 'Dassault Systèmes 3DPassport Authentication (Feature Pack)',
+      installerPath: '3DPassport-V6R2025x.HF4.Windows64.zip',
+      command: 'EXTRACT_ZIP',
+      defaultInstallPath: 'C:\\apps\\3DPassport_FP',
       supportsCustomPath: true,
       requiresExtraction: true,
       type: 'zip',
