@@ -320,14 +320,17 @@ const LogsPanel = () => {
 
         <Collapse in={expanded} timeout="auto" unmountOnExit>
           {/* Search and Controls Bar */}
-          <Box sx={{ 
-            p: 2, 
-            backgroundColor: '#f8f9fa', 
-            borderBottom: '1px solid #e0e0e0',
-            display: 'flex',
-            gap: 2,
-            alignItems: 'center'
-          }}>
+          <Box 
+            onClick={(e) => e.stopPropagation()} // Prevent collapse when clicking anywhere in controls
+            sx={{ 
+              p: 2, 
+              backgroundColor: '#f8f9fa', 
+              borderBottom: '1px solid #e0e0e0',
+              display: 'flex',
+              gap: 2,
+              alignItems: 'center'
+            }}
+          >
             <TextField
               size="small"
               placeholder="Search logs..."
@@ -406,7 +409,10 @@ const LogsPanel = () => {
             </Tooltip>
           </Box>
           
-          <Box sx={{ display: 'flex', height: 'calc(100vh - 300px)', minHeight: 400 }}>
+          <Box 
+            onClick={(e) => e.stopPropagation()} // Prevent collapse when clicking in logs area
+            sx={{ display: 'flex', height: 'calc(100vh - 300px)', minHeight: 400 }}
+          >
             {/* Logs List */}
             <Box sx={{ width: '45%', borderRight: '1px solid', borderColor: 'divider', backgroundColor: '#fafafa' }}>
               <List sx={{ 
